@@ -2,7 +2,7 @@
   <img src="static/images/story/hero.png" alt="A child in headphones writing in a notebook — watercolor" width="260">
 </p>
 
-<h1 align="center">TranscriptoAI</h1>
+<h1 align="center">Heardit</h1>
 <p align="center"><strong>While you listen, the notes write themselves.</strong><br>
 An AI notebook for lectures and meetings that transcribes, summarizes, explains the hard words —
 and answers <em>only</em> from what was actually said.</p>
@@ -20,7 +20,7 @@ and answers <em>only</em> from what was actually said.</p>
 ## Why this exists
 
 Most AI note apps will happily answer questions with facts that were never in the lecture.
-That is worse than useless for studying — it is confidently wrong. TranscriptoAI treats the
+That is worse than useless for studying — it is confidently wrong. Heardit treats the
 transcript as the **only** source of truth:
 
 > **You:** What did they say about BERT today?
@@ -54,7 +54,7 @@ Audio is never stored: it is deleted the moment it becomes text.
 Requires Python 3.12+ and `ffmpeg` (`brew install ffmpeg`).
 
 ```bash
-git clone https://github.com/S2chloeS2/transcripto-ai && cd transcripto-ai
+git clone https://github.com/S2chloeS2/heardit && cd heardit
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env            # add OPENAI_API_KEY (required) and ASSEMBLYAI_API_KEY (recommended)
@@ -121,7 +121,7 @@ and keep `MONTHLY_BUDGET_MINUTES` as the hard ceiling on total spend.
 
 Built as a course project at Columbia University (*Designing for Generative AI*, Fall 2024),
 then rebuilt for real use in 2026. Development history, including the approaches that did not
-work, lives in [`transcripto-ai-archive`](https://github.com/S2chloeS2/transcripto-ai-archive).
+work, lives in [`heardit-archive`](https://github.com/S2chloeS2/heardit-archive).
 
 Illustrations are original watercolor-style images generated for this project.
 

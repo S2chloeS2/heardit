@@ -1,4 +1,4 @@
-"""TranscriptoAI — capture a lecture or meeting, and turn it into notes.
+"""Heardit — capture a lecture or meeting, and turn it into notes.
 
 Three ways in:
   system — audio playing on this computer (Zoom, YouTube, any tab)

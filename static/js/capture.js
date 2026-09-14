@@ -1,4 +1,4 @@
-/* Audio capture for TranscriptoAI.
+/* Audio capture for Heardit.
  *
  * Three sources, one interface:
  *   system — what is playing on this computer, via a shared tab

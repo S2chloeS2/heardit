@@ -216,7 +216,7 @@ def checkout_url(user, q, success_url, cancel_url):
                 "currency": "krw",
                 "unit_amount": q["list_price"],
                 "recurring": {"interval": "month"},
-                "product_data": {"name": f"TranscriptoAI {name}"},
+                "product_data": {"name": f"Heardit {name}"},
             },
             "quantity": 1,
         }
@@ -226,7 +226,7 @@ def checkout_url(user, q, success_url, cancel_url):
             "price_data": {
                 "currency": "krw",
                 "unit_amount": q["list_price"],
-                "product_data": {"name": f"TranscriptoAI {name}"},
+                "product_data": {"name": f"Heardit {name}"},
             },
             "quantity": 1,
         }

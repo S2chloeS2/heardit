@@ -182,4 +182,4 @@ def split(path, workdir, seconds=CHUNK_SECONDS):
 
 def workspace():
     """A temp directory the caller is responsible for cleaning up."""
-    return tempfile.mkdtemp(prefix="transcripto_")
+    return tempfile.mkdtemp(prefix="heardit_")

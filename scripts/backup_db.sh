@@ -4,9 +4,9 @@
 #   0 4 * * * /path/to/scripts/backup_db.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
-DB="${DB_PATH:-transcripto.db}"
-OUT="backups/transcripto-$(date +%Y%m%d-%H%M%S).db"
+DB="${DB_PATH:-heardit.db}"
+OUT="backups/heardit-$(date +%Y%m%d-%H%M%S).db"
 sqlite3 "$DB" ".backup '$OUT'"
 gzip -f "$OUT"
-ls -1t backups/transcripto-*.db.gz | tail -n +15 | xargs -r rm -f
+ls -1t backups/heardit-*.db.gz | tail -n +15 | xargs -r rm -f
 echo "backed up → $OUT.gz ($(ls -1 backups | wc -l | tr -d ' ') kept)"

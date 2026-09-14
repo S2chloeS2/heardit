@@ -1,4 +1,4 @@
-"""SQLite persistence for TranscriptoAI.
+"""SQLite persistence for Heardit.
 
 Sessions survive restarts, which is what makes the Review screen worth having.
 Everything is stored in a single file so the app stays clone-and-run.
@@ -9,7 +9,7 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 
-DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "transcripto.db"))
+DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "heardit.db"))
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (

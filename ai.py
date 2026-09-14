@@ -1,4 +1,4 @@
-"""OpenAI calls for TranscriptoAI.
+"""OpenAI calls for Heardit.
 
 Every prompt here is grounded in one session's transcript. The chat in
 particular is constrained to it: if the transcript does not cover a question,

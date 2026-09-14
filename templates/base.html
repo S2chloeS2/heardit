@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}TranscriptoAI{% endblock %}</title>
+  <title>{% block title %}Heardit{% endblock %}</title>
   <meta name="description" content="{{ _('강의와 회의를 받아적고, 요약하고, 그 자리에서 나온 말에 대해서만 답하는 AI 노트. 지어내지 않습니다.') }}">
   <meta property="og:type" content="website">
-  <meta property="og:site_name" content="TranscriptoAI">
+  <meta property="og:site_name" content="Heardit">
   <meta property="og:title" content="{{ self.title() }}">
   <meta property="og:description" content="{{ _('듣는 동안, 노트는 알아서 완성된다. 강의든 회의든 소리만 넘겨주면 받아적고 요약합니다.') }}">
   <meta property="og:image" content="{{ url_for('static', filename='images/story/hero.png', _external=True) }}">
@@ -22,7 +22,7 @@
 <body>
   <nav class="nav">
     <a class="brand" href="{{ url_for('landing') }}">
-      <span class="brand-dot"></span> TranscriptoAI
+      <span class="brand-dot"></span> Heardit
     </a>
     <div class="nav-links">
       {% if current_user %}

@@ -20,6 +20,7 @@ node_modules/
 .DS_Store
 
 # 세션 데이터베이스
+heardit.db
 transcripto.db
 
 # 백업 스냅샷

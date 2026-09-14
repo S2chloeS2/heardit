@@ -2,7 +2,7 @@
 # persistent disk so sessions survive restarts and deploys.
 services:
   - type: web
-    name: transcripto-ai
+    name: heardit
     runtime: python
     plan: starter
     buildCommand: pip install -r requirements.txt
@@ -16,7 +16,7 @@ services:
       - key: FLASK_ENV
         value: production
       - key: DB_PATH
-        value: /var/data/transcripto.db
+        value: /var/data/heardit.db
       - key: AUDIO_DIR
         value: /var/data/audio
       - key: PYTHON_VERSION
