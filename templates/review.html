@@ -49,10 +49,11 @@
         {% if s.keyword_list %}
         <div class="keywords" style="margin-top:10px;">
           {% for kw in s.keyword_list[:8] %}
-          <a class="kw kw-mini" href="{{ url_for('session_view', session_id=s.id) }}#keywords">{{ kw }}</a>
+          <button type="button" class="kw kw-mini" data-session="{{ s.id }}" data-kw="{{ kw }}" aria-expanded="false">{{ kw }}</button>
           {% endfor %}
-          {% if s.keyword_list | length > 8 %}<span class="hint" style="align-self:center;">+{{ s.keyword_list | length - 8 }}</span>{% endif %}
+          {% if s.keyword_list | length > 8 %}<a class="hint" style="align-self:center;" href="{{ url_for('session_view', session_id=s.id) }}#keywords">+{{ s.keyword_list | length - 8 }}</a>{% endif %}
         </div>
+        <div class="kw-panel kw-panel-review" hidden></div>
         {% endif %}
       </div>
       <div style="display:grid; gap:8px; justify-items:end;">
@@ -94,6 +95,23 @@ document.querySelectorAll('[data-delete]').forEach(btn => {
     if (!confirm(T.deleteConfirm)) return;
     const res = await fetch(`/api/sessions/${btn.dataset.delete}`, { method: 'DELETE' });
     if (res.ok) btn.closest('.session-card').remove(); else toast(T.deleteFailed, 'bad');
+  });
+});
+// Keyword chips explain in place, same cached note the session page uses.
+document.querySelectorAll('.session-card .kw-mini').forEach((btn) => {
+  btn.addEventListener('click', async () => {
+    const card = btn.closest('.session-card');
+    const panel = card.querySelector('.kw-panel-review');
+    const open = btn.getAttribute('aria-expanded') === 'true';
+    card.querySelectorAll('.kw-mini').forEach((b) => b.setAttribute('aria-expanded', 'false'));
+    if (open) { panel.hidden = true; return; }
+    btn.setAttribute('aria-expanded', 'true');
+    panel.hidden = false;
+    panel.textContent = T.loadingExplanation;
+    try {
+      const data = await api(`/api/sessions/${btn.dataset.session}/keyword?q=${encodeURIComponent(btn.dataset.kw)}`);
+      panel.innerHTML = renderMarkdown(data.explanation);
+    } catch (err) { panel.textContent = err.message; }
   });
 });
 document.getElementById('folder-new').addEventListener('click', async () => {

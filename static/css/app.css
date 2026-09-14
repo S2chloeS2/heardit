@@ -942,3 +942,5 @@ html, body { overflow-x: clip; }
 .compare th.is-featured { color: var(--accent); }
 .compare .yes { color: var(--accent); font-weight: 700; }
 .compare .no { color: var(--ink-mute); }
+.kw-panel-review { margin-top: 10px; }
+.kw-panel-review[hidden] { display: none; }
