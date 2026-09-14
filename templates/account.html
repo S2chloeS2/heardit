@@ -34,25 +34,60 @@
     </section>
     {% endif %}
 
+    {% if allowance.bonus_s or allowance.plan_until %}
+    <section class="card card-pad">
+      <p class="section-label">{{ _('크레딧') }}</p>
+      <div class="usage-big">
+        <div>
+          <div class="usage-big-num">{{ allowance.bonus_label }} <small>{{ _('크레딧') }}</small></div>
+          <p class="hint">{{ _('이번 달 시간을 다 쓴 뒤에 쓰입니다. 만료되지 않습니다.') }}
+            {% if allowance.plan_until and allowance.plan.key != 'free' %}<br>{{ _('{plan} 플랜은 {date}까지입니다.').format(plan=_(allowance.plan.name), date=allowance.plan_until[:10]) }}{% endif %}</p>
+        </div>
+      </div>
+    </section>
+    {% endif %}
+
     <section>
       <p class="section-label">{{ _('플랜') }}</p>
-      <div class="lp-prices" style="margin-top:0;">
-        {% for key in order %}{% set p = plans[key] %}
-        <div class="lp-price {{ 'is-featured' if key == 'standard' }}" data-plan="{{ key }}">
-          {% if key == allowance.plan.key %}<span class="lp-price-flag">{{ _('현재 플랜') }}</span>
-          {% elif key == 'standard' %}<span class="lp-price-flag" style="background:var(--sunk); color:var(--ink-mute);">{{ _('가장 많이 씁니다') }}</span>{% endif %}
-          <h3>{{ _(p.name) }}</h3>
-          <div class="lp-price-amount">{% if lang == 'ko' %}{{ '{:,}'.format(p.price) }}<small>원{% if p.price %} / 월{% endif %}</small>{% else %}<small>₩</small>{{ '{:,}'.format(p.price) }}{% if p.price %}<small> / mo</small>{% endif %}{% endif %}</div>
-          <p class="lp-price-hours">{% if lang == 'ko' %}월 {{ p.minutes // 60 }}시간 · {{ p.blurb }}{% else %}{{ p.minutes // 60 }} hours / month · {{ _(p.blurb) }}{% endif %}</p>
-          <ul>{% for f in p.features %}<li>{{ _(f) }}</li>{% endfor %}</ul>
-          {% if key == allowance.plan.key %}<button class="btn btn-ghost" disabled>{{ _('사용 중') }}</button>
-          {% elif can_switch %}<button class="btn {{ 'btn-primary' if key == 'standard' else 'btn-ghost' }} plan-switch" data-plan="{{ key }}">{{ _('이 플랜으로') if p.price else _('무료로 내리기') }}</button>
-          {% else %}<button class="btn btn-ghost" disabled>{{ _('준비 중') }}</button>{% endif %}
-        </div>
-        {% endfor %}
-      </div>
-      <p class="hint" style="margin-top:14px;">{% if can_switch %}{{ _('지금은 결제 연동 전이라 로컬 테스트용으로 플랜을 바로 바꿀 수 있습니다. 배포 환경에서는 이 버튼이 나타나지 않습니다.') }}{% else %}{{ _('결제 연동을 준비하고 있습니다. 준비되면 여기서 바로 바꿀 수 있습니다.') }}{% endif %}</p>
+      {% with mode='buy', current=allowance.plan.key %}{% include "_plan_cards.html" %}{% endwith %}
+      <p class="hint" style="margin-top:14px;">
+        {% if simulated %}{{ _('로컬 테스트 빌드라 결제창 없이 바로 적용됩니다. 배포 환경에서는 Stripe 결제창이 열립니다.') }}
+        {% elif not payments_open %}{{ _('결제를 준비하고 있습니다. 열리면 여기서 바로 결제할 수 있습니다.') }}
+        {% else %}{{ _('결제는 Stripe에서 처리되며 카드 정보는 저희 서버에 저장되지 않습니다.') }}{% endif %}
+        {% if has_portal %}<button type="button" class="btn btn-ghost btn-sm" id="manage-billing" style="margin-left:8px;">{{ _('구독 관리 · 해지') }}</button>{% endif %}
+      </p>
     </section>
+
+    <section class="card card-pad">
+      <p class="section-label">{{ _('코드 등록') }}</p>
+      <p class="hint" style="margin-bottom:12px;">{{ _('초대 코드나 개발자 코드는 여기에 넣으면 플랜이 바로 적용됩니다. 할인 코드는 결제할 때 입력하세요.') }}</p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <input class="input" id="redeem-code" placeholder="{{ _('코드') }}" autocomplete="off" style="max-width:260px; text-transform:uppercase;">
+        <button type="button" class="btn btn-ghost" id="redeem-btn">{{ _('등록') }}</button>
+      </div>
+    </section>
+
+    {% if orders %}
+    <section class="card card-pad">
+      <p class="section-label">{{ _('결제 내역') }}</p>
+      <div style="overflow-x:auto;">
+      <table class="orders">
+        <thead><tr><th>{{ _('날짜') }}</th><th>{{ _('항목') }}</th><th>{{ _('할인') }}</th><th>{{ _('결제 금액') }}</th><th>{{ _('상태') }}</th></tr></thead>
+        <tbody>
+        {% for o in orders %}
+        <tr>
+          <td>{{ o.created_at[:10] }}</td>
+          <td>{% if o.kind == 'topup' %}{{ _(topups[o.item].name) if o.item in topups else o.item }}{% else %}{{ _(plans[o.item].name) if o.item in plans else o.item }}{% if o.kind == 'renewal' %} · {{ _('갱신') }}{% elif o.kind == 'comp' %} · {{ _('코드') }}{% endif %}{% endif %}{% if o.promo_code %} <span class="tag">{{ o.promo_code }}</span>{% endif %}</td>
+          <td>{% if o.discount %}-{{ '{:,}'.format(o.discount) }}{% else %}–{% endif %}</td>
+          <td>{% if lang == 'ko' %}{{ '{:,}'.format(o.amount) }}원{% else %}₩{{ '{:,}'.format(o.amount) }}{% endif %}</td>
+          <td>{{ _('완료') if o.status == 'paid' else o.status }}{% if o.provider == 'simulated' %} <span class="hint">({{ _('테스트') }})</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </section>
+    {% endif %}
 
     <section class="card card-pad" style="border-color: color-mix(in srgb, var(--bad) 30%, var(--rule));">
       <p class="section-label" style="color:var(--bad);">{{ _('계정 삭제') }}</p>
@@ -84,14 +119,22 @@ document.getElementById('delete-account').addEventListener('click', async () => 
     window.location.href = '/';
   } catch (err) { toast(err.message, 'bad'); }
 });
-document.querySelectorAll('.plan-switch').forEach(btn => {
-  btn.addEventListener('click', async () => {
-    btn.disabled = true;
-    try {
-      await api('/api/account/plan', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ plan: btn.dataset.plan }) });
-      location.reload();
-    } catch (err) { toast(err.message, 'bad'); btn.disabled = false; }
-  });
+document.getElementById('redeem-btn').addEventListener('click', async () => {
+  const code = document.getElementById('redeem-code').value.trim();
+  if (!code) return;
+  try {
+    await api('/api/billing/redeem', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ code }) });
+    toast(T.codeApplied, 'ok');
+    setTimeout(() => location.reload(), 600);
+  } catch (err) { toast(err.message, 'bad'); }
 });
+const manage = document.getElementById('manage-billing');
+if (manage) manage.addEventListener('click', async () => {
+  try {
+    const data = await api('/api/billing/portal', { method: 'POST' });
+    window.location.href = data.url;
+  } catch (err) { toast(err.message, 'bad'); }
+});
+if (new URLSearchParams(location.search).get('paid') === '1') toast(T.paid, 'ok');
 </script>
 {% endblock %}

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ _('요금') }} — TranscriptoAI{% endblock %}
+{% set art = 'images/story/' %}
+
+{% block body %}
+<div class="lp">
+  <section class="lp-section" style="padding-top:40px;">
+    <div class="lp-center">
+      <p class="lp-eyebrow">{{ _('요금') }}</p>
+      <h2 class="lp-h2">{{ _('학생이 직접 낼 수 있는 값') }}</h2>
+      <p class="lp-lede">{{ _('받아적은 시간만 셉니다. 노트, 시험 요약, 챗, 번역, 다시 듣기는 모두 포함입니다. 언제든 해지할 수 있습니다.') }}</p>
+    </div>
+    {% with mode=('buy' if current_user else 'landing') %}{% include "_plan_cards.html" %}{% endwith %}
+
+    <div class="lp-compare">
+      <h3>{{ _('다른 받아쓰기 앱과 무엇이 다른가') }}</h3>
+      <ul>
+        <li><strong>{{ _('지어내지 않는 챗') }}</strong> — {{ _('그날 기록 안에서만 답하고, 없는 내용은 없다고 말합니다. 시험 전날 잘못된 답을 외우지 않습니다.') }}</li>
+        <li><strong>{{ _('시험 노트 두 종류') }}</strong> — {{ _('빠짐없이 적은 전체 노트와, 정의·공식·예상 문제만 추린 시험 전날용 한 장.') }}</li>
+        <li><strong>{{ _('문장을 누르면 다시 들립니다') }}</strong> — {{ _('녹음을 보관하고 문장마다 위치를 기억합니다. 받아쓴 게 이상하면 바로 확인.') }}</li>
+        <li><strong>{{ _('강의 자료와 나란히') }}</strong> — {{ _('슬라이드 PDF를 붙이면 옆에서 같이 보고, 노트를 만들 때 용어와 공식을 슬라이드 기준으로 맞춥니다.') }}</li>
+        <li><strong>{{ _('과목 단위 질문') }}</strong> — {{ _('한 학기 강의를 폴더로 묶어 "3주차와 5주차가 어떻게 다르게 설명했지?"를 물을 수 있습니다.') }}</li>
+        <li><strong>{{ _('실시간 번역') }}</strong> — {{ _('영어 강의 밑에 한국어 한 줄. 16개 언어.') }}</li>
+      </ul>
+    </div>
+  </section>
+</div>
+{% endblock %}

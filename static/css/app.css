@@ -903,3 +903,32 @@ html, body { overflow-x: clip; }
   .usage-pill { display: none; }
   .nav-links { gap: 2px; }
 }
+
+/* ---- pricing & billing */
+.topups { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; margin-top: 22px; padding: 18px 22px; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); }
+.topup-list { display: flex; gap: 10px; flex-wrap: wrap; }
+.topup { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 999px; background: var(--sunk); font-size: 14px; }
+.topup-price { color: var(--ink-mute); }
+.lp-compare { max-width: 760px; margin: 56px auto 0; }
+.lp-compare h3 { font-size: 20px; margin-bottom: 16px; text-align: center; }
+.lp-compare ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.lp-compare li { font-size: 15px; line-height: 1.65; color: var(--ink-soft); padding-left: 22px; position: relative; }
+.lp-compare li::before { content: ""; position: absolute; left: 0; top: 10px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+.modal { position: fixed; inset: 0; background: rgba(63,58,48,.38); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 50; }
+.modal[hidden] { display: none; }
+.modal-card { width: 100%; max-width: 420px; background: var(--surface); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow-lg); }
+.quote { display: grid; gap: 6px; font-size: 14.5px; }
+.quote-row { display: flex; justify-content: space-between; }
+.quote-row.is-discount { color: var(--ok); }
+.quote-row.is-total { border-top: 1px solid var(--rule); padding-top: 8px; margin-top: 4px; font-weight: 700; font-size: 16px; }
+.orders { width: 100%; border-collapse: collapse; font-size: 14px; }
+.orders th, .orders td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+.orders th { font-weight: 600; color: var(--ink-mute); font-size: 12.5px; }
+/* ---- slides panel */
+.grid-session.has-slides { grid-template-columns: minmax(300px, 1fr) minmax(300px, 1fr) 340px; }
+@media (max-width: 1200px) { .grid-session.has-slides { grid-template-columns: 1fr 1fr; } .grid-session.has-slides > aside:last-child { grid-column: 1 / -1; } }
+@media (max-width: 940px) { .grid-session.has-slides { grid-template-columns: 1fr; } }
+.slides-panel { display: flex; flex-direction: column; min-height: 70vh; position: sticky; top: 76px; overflow: hidden; }
+.slides-panel[hidden] { display: none; }
+.slides-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--rule); }
+#slides-frame { flex: 1; width: 100%; border: 0; min-height: 60vh; background: #fff; }

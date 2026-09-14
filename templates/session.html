@@ -29,6 +29,8 @@
       </div>
     </div>
     <div class="session-actions">
+      <input type="file" id="slides-file" accept="application/pdf" hidden>
+      <button type="button" class="btn btn-ghost btn-sm" id="slides-btn" data-has="{{ '1' if session.attachment_name else '' }}" data-url="{{ url_for('api_attachment_file', session_id=session.id) }}" title="{{ session.attachment_name or '' }}">{{ _('자료 보기') if session.attachment_name else _('자료 PDF 붙이기') }}</button>
       <button type="button" class="btn btn-ghost btn-sm" id="export">{{ _('내보내기') }}</button>
       <button type="button" class="btn btn-primary" id="make-summary">{{ _('요약 만들기') }}</button>
     </div>
@@ -56,7 +58,18 @@
   </section>
   {% endif %}
 
-  <div class="grid-session">
+  <div class="grid-session" id="session-grid">
+    <aside class="card slides-panel" id="slides-panel" hidden>
+      <div class="slides-head">
+        <span class="hint" id="slides-name" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ session.attachment_name or '' }}</span>
+        <div style="display:flex; gap:6px; flex:none;">
+          <button type="button" class="btn btn-ghost btn-sm" id="slides-replace">{{ _('바꾸기') }}</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="slides-remove">{{ _('떼기') }}</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="slides-close" aria-label="{{ _('닫기') }}">✕</button>
+        </div>
+      </div>
+      <iframe id="slides-frame" title="{{ _('강의 자료') }}" src="about:blank"></iframe>
+    </aside>
     <div class="stack">
       {% if speakers %}
       <section class="card card-pad" id="speaker-card">
@@ -135,8 +148,15 @@
       </section>
 
       <section class="card card-pad" id="summary-card" {% if not session.summary %}style="display:none;"{% endif %}>
-        <p class="section-label">{{ _('요약') }}</p>
+        <div class="transcript-head">
+          <div class="seg" role="tablist" id="notes-tabs">
+            <button type="button" class="seg-btn" role="tab" data-tab="notes" aria-pressed="true">{{ _('전체 노트') }}</button>
+            <button type="button" class="seg-btn" role="tab" data-tab="exam" aria-pressed="false" id="exam-tab" {% if session.kind != 'lecture' %}hidden{% endif %}>{{ _('시험 요약') }}</button>
+          </div>
+          <span class="hint" id="notes-hint">{{ _('빠짐없이 적은 노트') }}</span>
+        </div>
         <div class="summary-body" id="summary-body">{{ session.summary or '' }}</div>
+        <div class="summary-body" id="exam-body" hidden>{{ session.exam_sheet or '' }}</div>
         <div style="margin-top:22px;">
           <p class="section-label">{{ _('핵심 용어') }}</p>
           <div class="keywords" id="keywords">

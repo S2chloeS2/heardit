@@ -188,49 +188,11 @@
     <div class="lp-center">
       <p class="lp-eyebrow">{{ _('요금') }}</p>
       <h2 class="lp-h2">{{ _('학생이 직접 낼 수 있는 값') }}</h2>
-      <p class="lp-lede">{{ _('회사가 대신 내주는 가격이 아닙니다. 언제든 해지할 수 있습니다.') }}</p>
+      <p class="lp-lede">{{ _('받아적은 시간만 셉니다. 노트, 시험 요약, 챗, 번역, 다시 듣기는 모두 포함입니다. 언제든 해지할 수 있습니다.') }}</p>
     </div>
 
-    <div class="lp-prices">
-      <div class="lp-price">
-        <h3>{{ _('무료') }}</h3>
-        <div class="lp-price-amount">{% if lang == 'ko' %}0<small>원</small>{% else %}<small>₩</small>0{% endif %}</div>
-        <p class="lp-price-hours">{{ _('월 5시간') }}</p>
-        <ul>
-          <li>{{ _('모든 입력 방식') }}</li>
-          <li>{{ _('요약 · 키워드 · AI 챗') }}</li>
-          <li>{{ _('폴더로 묶어 한꺼번에 질문') }}</li>
-          <li>{{ _('기록 30일 보관') }}</li>
-        </ul>
-        <a class="btn btn-ghost" href="{{ url_for('auth.login') }}">{{ _('시작하기') }}</a>
-      </div>
-
-      <div class="lp-price is-featured">
-        <span class="lp-price-flag">{{ _('가장 많이 씁니다') }}</span>
-        <h3>{{ _('스탠다드') }}</h3>
-        <div class="lp-price-amount">{% if lang == 'ko' %}11,900<small>원 / 월</small>{% else %}<small>₩</small>11,900<small> / mo</small>{% endif %}</div>
-        <p class="lp-price-hours">{{ _('월 25시간') }}</p>
-        <ul>
-          <li>{{ _('무료의 모든 기능') }}</li>
-          <li>{{ _('기록 무제한 보관') }}</li>
-          <li>{{ _('회의 화자 분리') }}</li>
-          <li>{{ _('마크다운 내보내기') }}</li>
-        </ul>
-        <a class="btn btn-primary" href="{{ url_for('auth.login') }}">{{ _('무료로 먼저 써보기') }}</a>
-      </div>
-
-      <div class="lp-price">
-        <h3>{{ _('프로') }}</h3>
-        <div class="lp-price-amount">{% if lang == 'ko' %}24,900<small>원 / 월</small>{% else %}<small>₩</small>24,900<small> / mo</small>{% endif %}</div>
-        <p class="lp-price-hours">{{ _('월 60시간') }}</p>
-        <ul>
-          <li>{{ _('스탠다드의 모든 기능') }}</li>
-          <li>{{ _('긴 회의 우선 처리') }}</li>
-          <li>{{ _('개인정보 자동 가리기') }}</li>
-        </ul>
-        <a class="btn btn-ghost" href="{{ url_for('auth.login') }}">{{ _('시작하기') }}</a>
-      </div>
-    </div>
+    {% with mode='landing', current=None %}{% include "_plan_cards.html" %}{% endwith %}
+    <p class="lp-center hint" style="margin-top:18px;"><a href="{{ url_for('pricing') }}">{{ _('무엇이 다른지 자세히 보기') }}</a></p>
   </section>
 </div>
 

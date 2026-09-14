@@ -325,6 +325,26 @@ if (summaryBody.textContent.trim()) {
   summaryBody.innerHTML = renderMarkdown(summaryBody.textContent);
 }
 
+// Two views of the same session: the full notes and the cram sheet.
+const examBody = document.getElementById('exam-body');
+const examTab = document.getElementById('exam-tab');
+const notesHint = document.getElementById('notes-hint');
+if (examBody.textContent.trim()) {
+  examBody.innerHTML = renderMarkdown(examBody.textContent);
+} else {
+  examTab.hidden = true;
+}
+function showTab(which) {
+  document.querySelectorAll('#notes-tabs .seg-btn').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tab === which)));
+  summaryBody.hidden = which !== 'notes';
+  examBody.hidden = which !== 'exam';
+  notesHint.textContent = which === 'exam' ? T.examHint : T.notesHint;
+}
+document.getElementById('notes-tabs').addEventListener('click', (e) => {
+  const b = e.target.closest('.seg-btn');
+  if (b) showTab(b.dataset.tab);
+});
+
 summaryBtn.addEventListener('click', async () => {
   summaryBtn.disabled = true;
   const original = summaryBtn.textContent;
@@ -332,6 +352,9 @@ summaryBtn.addEventListener('click', async () => {
   try {
     const data = await api(`/api/sessions/${sessionId}/summary`, { method: 'POST' });
     summaryBody.innerHTML = renderMarkdown(data.summary);
+    examBody.innerHTML = renderMarkdown(data.exam_sheet || '');
+    examTab.hidden = !data.exam_sheet;
+    showTab('notes');
     summaryCard.style.display = '';
     renderKeywords(data.keywords);
     if (data.title) titleInput.value = data.title;
@@ -443,6 +466,8 @@ document.getElementById('export').addEventListener('click', () => {
 
   const summary = summaryBody.textContent.trim();
   if (summary) lines.push(`## ${T.exportSummary}`, '', summary, '');
+  const exam = examBody.textContent.trim();
+  if (exam) lines.push(`## ${T.exportExam}`, '', exam, '');
 
   const keywords = [...keywordsEl.querySelectorAll('.kw')].map((b) => b.textContent);
   if (keywords.length) lines.push(`## ${T.exportKeywords}`, '', keywords.join(', '), '');
@@ -501,3 +526,64 @@ if (folderSelect) {
     }
   });
 }
+
+// -------------------------------------------------------------------- slides
+
+// A PDF of the slides sits beside the transcript, and its text goes into the
+// notes the next time they are generated.
+const slidesBtn = document.getElementById('slides-btn');
+const slidesFile = document.getElementById('slides-file');
+const slidesPanel = document.getElementById('slides-panel');
+const slidesFrame = document.getElementById('slides-frame');
+const slidesName = document.getElementById('slides-name');
+const grid = document.getElementById('session-grid');
+
+function openSlides() {
+  if (slidesFrame.getAttribute('src') === 'about:blank') slidesFrame.src = slidesBtn.dataset.url + '#view=FitH';
+  slidesPanel.hidden = false;
+  grid.classList.add('has-slides');
+}
+function closeSlides() {
+  slidesPanel.hidden = true;
+  grid.classList.remove('has-slides');
+}
+slidesBtn.addEventListener('click', () => {
+  if (slidesBtn.dataset.has) { slidesPanel.hidden ? openSlides() : closeSlides(); }
+  else slidesFile.click();
+});
+document.getElementById('slides-replace').addEventListener('click', () => slidesFile.click());
+document.getElementById('slides-close').addEventListener('click', closeSlides);
+slidesFile.addEventListener('change', async () => {
+  const file = slidesFile.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  slidesBtn.disabled = true;
+  slidesBtn.textContent = T.uploading;
+  try {
+    const data = await api(`/api/sessions/${sessionId}/attachment`, { method: 'POST', body: form });
+    slidesBtn.dataset.has = '1';
+    slidesBtn.title = data.name;
+    slidesName.textContent = data.name;
+    slidesFrame.src = data.url + '?v=' + Date.now() + '#view=FitH';
+    openSlides();
+    toast(data.chars ? T.slidesAttached : T.slidesNoText, data.chars ? 'ok' : 'bad');
+  } catch (err) {
+    toast(err.message, 'bad');
+  } finally {
+    slidesBtn.disabled = false;
+    slidesBtn.textContent = slidesBtn.dataset.has ? T.viewSlides : T.attachSlides;
+    slidesFile.value = '';
+  }
+});
+document.getElementById('slides-remove').addEventListener('click', async () => {
+  if (!confirm(T.slidesRemoveConfirm)) return;
+  try {
+    await api(`/api/sessions/${sessionId}/attachment`, { method: 'DELETE' });
+    closeSlides();
+    slidesBtn.dataset.has = '';
+    slidesBtn.title = '';
+    slidesBtn.textContent = T.attachSlides;
+    slidesFrame.src = 'about:blank';
+  } catch (err) { toast(err.message, 'bad'); }
+});

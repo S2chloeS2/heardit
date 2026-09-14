@@ -43,6 +43,7 @@
           <span>&middot;</span>
           <span>{{ _('{n}개 구간').format(n=s.segment_count) }}</span>
           {% if s.summary %}<span class="tag tag-ok">{{ _('요약 있음') }}</span>{% endif %}
+          {% if s.attachment_name %}<span class="tag" title="{{ s.attachment_name }}">PDF</span>{% endif %}
         </div>
         {% if s.excerpt %}<p class="session-card-excerpt">{{ s.excerpt }}</p>{% endif %}
         {% if s.keyword_list %}

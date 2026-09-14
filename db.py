@@ -83,6 +83,39 @@ CREATE TABLE IF NOT EXISTS folder_messages (
     created_at TEXT    NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS promo_codes (
+    code       TEXT    PRIMARY KEY,           -- stored upper-case
+    kind       TEXT    NOT NULL,              -- 'percent' | 'fixed' | 'comp'
+    value      INTEGER NOT NULL DEFAULT 0,    -- percent, KRW, or unused for comp
+    plan       TEXT,                          -- comp: plan granted
+    months     INTEGER NOT NULL DEFAULT 1,    -- comp: how long
+    max_uses   INTEGER,                       -- NULL = unlimited
+    uses       INTEGER NOT NULL DEFAULT 0,
+    expires_at TEXT,
+    note       TEXT,
+    created_at TEXT    NOT NULL
+);
+CREATE TABLE IF NOT EXISTS promo_redemptions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    code       TEXT    NOT NULL REFERENCES promo_codes(code) ON DELETE CASCADE,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT    NOT NULL
+);
+CREATE TABLE IF NOT EXISTS orders (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind         TEXT    NOT NULL,            -- 'subscription' | 'renewal' | 'topup' | 'comp'
+    item         TEXT    NOT NULL,            -- plan key or top-up key
+    seconds      INTEGER NOT NULL DEFAULT 0,  -- credit granted (top-ups)
+    list_price   INTEGER NOT NULL DEFAULT 0,  -- KRW
+    discount     INTEGER NOT NULL DEFAULT 0,
+    amount       INTEGER NOT NULL DEFAULT 0,  -- what was charged
+    promo_code   TEXT,
+    provider     TEXT    NOT NULL,            -- 'stripe' | 'simulated' | 'comp'
+    provider_ref TEXT,                        -- checkout/invoice id, for support
+    status       TEXT    NOT NULL DEFAULT 'paid',
+    created_at   TEXT    NOT NULL
+);
 CREATE TABLE IF NOT EXISTS usage_log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -98,6 +131,8 @@ CREATE TABLE IF NOT EXISTS usage_log (
 INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_folder ON sessions(folder_id);
+CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_redemptions_user ON promo_redemptions(user_id);
 CREATE INDEX IF NOT EXISTS idx_segments_session ON segments(session_id);
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_folders_user ON folders(user_id);
@@ -129,9 +164,29 @@ def init():
         if "language" not in cols:
             conn.execute("ALTER TABLE sessions ADD COLUMN language TEXT")
 
+        for column, decl in (
+            ("exam_sheet", "TEXT"),
+            ("attachment_name", "TEXT"),   # original file name of the slides PDF
+            ("attachment_text", "TEXT"),   # extracted text, capped, for the notes
+        ):
+            if column not in cols:
+                conn.execute(f"ALTER TABLE sessions ADD COLUMN {column} {decl}")
+
         ucols = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
         if "plan" not in ucols:
             conn.execute("ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'")
+        for column, decl in (
+            ("plan_until", "TEXT"),                          # paid/comped plan lapses after this
+            ("bonus_seconds", "INTEGER NOT NULL DEFAULT 0"),  # top-up credits
+            ("stripe_customer_id", "TEXT"),
+            ("stripe_subscription_id", "TEXT"),
+        ):
+            if column not in ucols:
+                conn.execute(f"ALTER TABLE users ADD COLUMN {column} {decl}")
+
+        lcols = {row["name"] for row in conn.execute("PRAGMA table_info(usage_log)")}
+        if "bonus_s" not in lcols:
+            conn.execute("ALTER TABLE usage_log ADD COLUMN bonus_s INTEGER NOT NULL DEFAULT 0")
 
         existing = {row["name"] for row in conn.execute("PRAGMA table_info(segments)")}
         for column, decl in (
@@ -198,7 +253,8 @@ def list_sessions(user_id, folder_id=None):
 
 
 def update_session(session_id, **fields):
-    allowed = {"title", "kind", "summary", "keywords", "source_url", "folder_id", "language"}
+    allowed = {"title", "kind", "summary", "keywords", "source_url", "folder_id", "language",
+               "exam_sheet", "attachment_name", "attachment_text"}
     sets, values = [], []
     for key, value in fields.items():
         if key not in allowed:
@@ -542,29 +598,124 @@ def folder_corpus(folder_id):
 
 # ------------------------------------------------------------------- usage
 
-def log_usage(user_id, session_id, seconds):
+def log_usage(user_id, session_id, seconds, bonus_s=0):
+    """Record transcribed seconds. `bonus_s` is the part paid by top-up
+    credits, which the monthly meter must not count."""
     if not seconds or seconds <= 0:
         return
     with connect() as conn:
         conn.execute(
-            "INSERT INTO usage_log (user_id, session_id, seconds, created_at) VALUES (?,?,?,?)",
-            (user_id, session_id, int(round(seconds)), now()),
+            "INSERT INTO usage_log (user_id, session_id, seconds, bonus_s, created_at)"
+            " VALUES (?,?,?,?,?)",
+            (user_id, session_id, int(round(seconds)), int(bonus_s or 0), now()),
         )
 
 
 def usage_seconds(user_id, since=None):
     with connect() as conn:
         row = conn.execute(
-            "SELECT COALESCE(SUM(seconds), 0) AS s FROM usage_log WHERE user_id=?"
+            "SELECT COALESCE(SUM(seconds - bonus_s), 0) AS s FROM usage_log WHERE user_id=?"
             + (" AND created_at >= ?" if since else ""),
             (user_id, since) if since else (user_id,),
         ).fetchone()
         return int(row["s"] or 0)
 
 
-def set_plan(user_id, plan):
+def set_plan(user_id, plan, until=None):
     with connect() as conn:
-        conn.execute("UPDATE users SET plan=? WHERE id=?", (plan, user_id))
+        conn.execute("UPDATE users SET plan=?, plan_until=? WHERE id=?", (plan, until, user_id))
+
+
+def add_bonus_seconds(user_id, delta):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE users SET bonus_seconds = MAX(0, bonus_seconds + ?) WHERE id=?",
+            (int(delta), user_id),
+        )
+
+
+def set_stripe_ids(user_id, customer_id=None, subscription_id=None):
+    with connect() as conn:
+        if customer_id is not None:
+            conn.execute("UPDATE users SET stripe_customer_id=? WHERE id=?", (customer_id, user_id))
+        conn.execute("UPDATE users SET stripe_subscription_id=? WHERE id=?", (subscription_id, user_id))
+
+
+def user_by_stripe_customer(customer_id):
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM users WHERE stripe_customer_id=?", (customer_id,)).fetchone()
+        return dict(row) if row else None
+
+
+# ------------------------------------------------------------- orders
+
+def add_order(user_id, kind, item, amount, list_price=0, discount=0, seconds=0,
+              promo_code=None, provider="simulated", provider_ref=None, status="paid"):
+    with connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO orders (user_id, kind, item, seconds, list_price, discount, amount,"
+            " promo_code, provider, provider_ref, status, created_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (user_id, kind, item, int(seconds), int(list_price), int(discount), int(amount),
+             promo_code, provider, provider_ref, status, now()),
+        )
+        return cur.lastrowid
+
+
+def order_exists(provider_ref):
+    with connect() as conn:
+        return conn.execute("SELECT 1 FROM orders WHERE provider_ref=?", (provider_ref,)).fetchone() is not None
+
+
+def list_orders(user_id, limit=50):
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM orders WHERE user_id=? ORDER BY id DESC LIMIT ?", (user_id, limit)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# -------------------------------------------------------------- promos
+
+def get_promo(code):
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM promo_codes WHERE code=?", ((code or "").strip().upper(),)).fetchone()
+        return dict(row) if row else None
+
+
+def add_promo(code, kind, value=0, plan=None, months=1, max_uses=None, expires_at=None, note=None):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO promo_codes (code, kind, value, plan, months, max_uses, uses, expires_at, note, created_at)"
+            " VALUES (?,?,?,?,?,?,0,?,?,?)",
+            (code.strip().upper(), kind, int(value), plan, int(months), max_uses, expires_at, note, now()),
+        )
+
+
+def delete_promo(code):
+    with connect() as conn:
+        conn.execute("DELETE FROM promo_codes WHERE code=?", (code.strip().upper(),))
+
+
+def list_promos():
+    with connect() as conn:
+        return [dict(r) for r in conn.execute("SELECT * FROM promo_codes ORDER BY created_at DESC").fetchall()]
+
+
+def promo_used_by(code, user_id):
+    with connect() as conn:
+        return conn.execute(
+            "SELECT 1 FROM promo_redemptions WHERE code=? AND user_id=?", (code.upper(), user_id)
+        ).fetchone() is not None
+
+
+def redeem_promo(code, user_id):
+    with connect() as conn:
+        conn.execute("UPDATE promo_codes SET uses = uses + 1 WHERE code=?", (code.upper(),))
+        conn.execute(
+            "INSERT INTO promo_redemptions (code, user_id, created_at) VALUES (?,?,?)",
+            (code.upper(), user_id, now()),
+        )
 
 
 # -------------------------------------------------------------- account
@@ -581,6 +732,8 @@ def delete_user(user_id):
     with connect() as conn:
         session_ids = [r["id"] for r in conn.execute(
             "SELECT id FROM sessions WHERE user_id=?", (user_id,))]
+        conn.execute("DELETE FROM orders WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM promo_redemptions WHERE user_id=?", (user_id,))
         folder_ids = [r["id"] for r in conn.execute(
             "SELECT id FROM folders WHERE user_id=?", (user_id,))]
 

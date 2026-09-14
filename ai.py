@@ -157,35 +157,53 @@ SUMMARY_SYSTEM = (
     "transcript you are given. Never add facts, examples, or definitions that do "
     "not appear in it. Transcripts come from speech recognition and contain "
     "errors and false starts; read through them, but do not invent content to "
-    "fill gaps.\n\n{language}"
+    "fill gaps.\n\n"
+    "Output rules:\n"
+    "- Output markdown only: headings and bullet points. No preamble, no closing "
+    "remark, no code fences.\n"
+    "- Use exactly the section headings you are given, translated into the output "
+    "language. A heading line contains the heading and nothing else; the "
+    "guidance after each heading below describes what goes under it and must "
+    "never be copied into the notes.\n"
+    "- Be exhaustive rather than brief. Every point the speaker made belongs "
+    "somewhere in the notes. Compressing three points into one sentence is a "
+    "failure; a reader should not need the recording.\n\n{language}"
 )
 
 LECTURE_SHAPE = (
-    "Write thorough notes, not a synopsis. Preserve every concept the speaker "
-    "taught. Use these markdown sections, in this order, each with as many "
-    "bullets as the content needs (there is no upper limit):\n"
-    "## Overview - two or three sentences: what this session covered and why.\n"
-    "## Key concepts - one bullet per concept, stated as the speaker defined it. "
-    "Bold the term. Include contrasts the speaker drew between concepts.\n"
-    "## Examples and explanations - every example, analogy, demonstration or "
-    "worked problem the speaker walked through, with the point it was making.\n"
-    "## Formulas, procedures and figures - any equation, algorithm, step list, "
-    "number, date or name mentioned. Omit the section only if there are none.\n"
-    "## What the speaker emphasised - things flagged as important, repeated, "
-    "or said to be on the exam or assignment.\n"
-    "## Questions to check yourself - five to eight short questions this "
-    "material answers, for self-testing.\n"
-    "Use sub-bullets for detail. Keep the speaker's own terminology."
+    "Sections, in this order:\n"
+    "1. 'Overview': what this session covered and why it matters, in three to "
+    "five sentences.\n"
+    "2. 'Key concepts': one bullet per concept or term, with the term in bold, "
+    "defined the way the speaker defined it. Add sub-bullets for properties, "
+    "conditions, and contrasts the speaker drew with other concepts. Every "
+    "concept mentioned gets a bullet, even briefly mentioned ones.\n"
+    "3. 'Examples and explanations': every example, analogy, story, demonstration "
+    "or worked problem, each with the point it was making. One bullet per "
+    "example.\n"
+    "4. 'Formulas, procedures and figures': every equation, algorithm, step "
+    "list, number, statistic, date, name and reference mentioned. Skip this "
+    "section only if there is nothing.\n"
+    "5. 'What the speaker emphasised': things flagged as important, repeated, "
+    "or said to be on the exam, in an assignment, or worth remembering.\n"
+    "6. 'Questions to check yourself': six to ten short questions this material "
+    "answers, for self-testing, each followed by a one-line answer in a "
+    "sub-bullet.\n"
+    "Keep the speaker's own terminology and the order in which ideas were built up."
 )
 
 MEETING_SHAPE = (
-    "Write minutes someone who missed the meeting could act on. Use these "
-    "markdown sections, in this order, with as many bullets as needed:\n"
-    "## Overview - purpose of the meeting and who took part, if known.\n"
-    "## Decisions - each decision, with the reasoning given for it.\n"
-    "## Action items - who committed to what, and any deadline mentioned.\n"
-    "## Discussion - each topic raised, the positions taken and by whom.\n"
-    "## Open questions - anything left unresolved or deferred.\n"
+    "Sections, in this order:\n"
+    "1. 'Overview': purpose of the meeting and who took part, if known.\n"
+    "2. 'Decisions': each decision, with the reasoning given for it.\n"
+    "3. 'Action items': who committed to what, and any deadline mentioned. One "
+    "bullet per item.\n"
+    "4. 'Discussion': each topic raised, the positions taken and by whom, and "
+    "where it landed. Sub-bullets for the detail.\n"
+    "5. 'Figures and references': numbers, dates, names, documents and tools "
+    "mentioned.\n"
+    "6. 'Open questions': anything left unresolved or deferred, and who owns "
+    "following it up.\n"
     "When the transcript is labelled with speakers, name who raised each point "
     "and who owns each action."
 )
@@ -193,6 +211,57 @@ MEETING_SHAPE = (
 # Transcripts longer than this are summarised in stages so nothing is dropped
 # from the middle of a two-hour lecture.
 CHUNK_CHARS = 14_000
+
+# Notes shorter than this share of the transcript are treated as too thin.
+# Speech is repetitive, so half its length in notes is already exhaustive.
+NOTES_RATIO = 0.45
+NOTES_MIN_CHARS = 1_500
+NOTES_MAX_CHARS = 14_000
+# A first draft shorter than this share of the target gets a second pass
+# that walks the transcript again and adds what was left out.
+EXPAND_BELOW = 0.85
+
+
+def _target_length(transcript_chars):
+    return max(NOTES_MIN_CHARS, min(NOTES_MAX_CHARS, int(transcript_chars * NOTES_RATIO)))
+
+
+def _length_rule(transcript_chars):
+    target = _target_length(transcript_chars)
+    return (f"LENGTH: the transcript is about {transcript_chars:,} characters. Write "
+            f"at least {target:,} characters of notes. Notes shorter than that have "
+            "left material out; when unsure, include the detail.")
+
+
+def _expand_notes(notes, transcript, shape, system, target):
+    """Second pass when the first came back thin: add what was left out."""
+    return _strip_fences(_chat(
+        [
+            {"role": "system", "content": system},
+            {
+                "role": "user",
+                "content": (
+                    "These notes are too short for the transcript: they are "
+                    f"{len(notes):,} characters and should be at least {target:,}. "
+                    "Go through the transcript from start to end and add every "
+                    "point, definition, example, figure and remark that the notes "
+                    "do not yet contain, in the right section. Keep everything "
+                    "already there. Return the complete, expanded notes.\n\n"
+                    f"{shape}\n\nCurrent notes:\n{notes}\n\nTranscript:\n{transcript}"
+                ),
+            },
+        ],
+        model=SUMMARY_MODEL,
+        max_tokens=12000,
+    ))
+
+
+def _strip_fences(text):
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text)
+    return text.strip()
 
 
 def _split_transcript(text, size=CHUNK_CHARS):
@@ -215,89 +284,158 @@ def _split_transcript(text, size=CHUNK_CHARS):
 def _notes_for_chunk(chunk, index, total, kind, lang):
     """Detailed notes for one slice of a long transcript."""
     shape = LECTURE_SHAPE if kind == "lecture" else MEETING_SHAPE
-    return _chat(
+    system = SUMMARY_SYSTEM.format(language=_language_rule(lang))
+    notes = _strip_fences(_chat(
         [
-            {"role": "system", "content": SUMMARY_SYSTEM.format(language=_language_rule(lang))},
+            {"role": "system", "content": system},
             {
                 "role": "user",
                 "content": (
                     f"This is part {index} of {total} of one recording. Write complete "
-                    f"notes for THIS PART only, following this shape:\n\n{shape}\n\n"
+                    f"notes for THIS PART only.\n\n{shape}\n\n{_length_rule(len(chunk))}\n\n"
                     f"Transcript part {index}:\n{chunk}"
                 ),
             },
         ],
         model=SUMMARY_MODEL,
-        max_tokens=3500,
+        max_tokens=8000,
+    ))
+    target = _target_length(len(chunk))
+    if len(notes) < target * EXPAND_BELOW:
+        notes = _expand_notes(notes, chunk, shape, system, target)
+    return notes
+
+
+def _title_and_keywords(notes, transcript, lang):
+    """A name and 8-15 terms, from the finished notes (cheap model)."""
+    raw = _chat(
+        [
+            {
+                "role": "system",
+                "content": (
+                    "You label study notes. Return JSON with exactly these keys:\n"
+                    '  "title": a short specific name for this recording, 3-7 words\n'
+                    '  "keywords": 8-15 terms that actually appear in the notes and '
+                    "that a listener might want explained, most important first.\n"
+                    + _language_rule(lang)
+                ),
+            },
+            {"role": "user", "content": f"Notes:\n{notes[:8000]}\n\nStart of transcript:\n{transcript[:2000]}"},
+        ],
+        response_format={"type": "json_object"},
+        max_tokens=400,
     )
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        data = {}
+    return _as_text(data.get("title")), _as_keywords(data.get("keywords"))
 
 
-def summarize(transcript, kind="lecture", lang=None):
-    """Return {title, summary (markdown), keywords: [...]} for a transcript.
+SLIDES_RULE = (
+    "Slides for this session are attached after the transcript. The transcript "
+    "is still the source of what was said; use the slides to get terms, "
+    "formulas, figures and headings exactly right, and to fill in anything the "
+    "speaker referred to on screen without reading aloud. Mark items that "
+    "appear only on the slides with '(slides)'."
+)
+
+
+def summarize(transcript, kind="lecture", lang=None, slides=None):
+    """Return {title, summary (markdown), keywords: [...], language} for a transcript.
 
     Short recordings go to the model in one pass. Long ones are summarised
     part by part first, then merged, so the notes stay detailed throughout
-    rather than fading after the first twenty minutes.
+    rather than fading after the first twenty minutes. The notes come back
+    as plain markdown (long JSON strings truncate and mis-escape); a second,
+    cheap call names the session and picks the keywords.
     """
     lang = lang or detect_language(transcript)
     shape = LECTURE_SHAPE if kind == "lecture" else MEETING_SHAPE
     chunks = _split_transcript(transcript)
+    system = SUMMARY_SYSTEM.format(language=_language_rule(lang))
 
     if len(chunks) > 1:
         partials = [
             _notes_for_chunk(chunk, i, len(chunks), kind, lang)
             for i, chunk in enumerate(chunks, start=1)
         ]
-        source_label = "Notes for each part of the recording, in order"
         source = "\n\n---\n\n".join(
             f"PART {i}\n{p}" for i, p in enumerate(partials, start=1)
         )
+        total_notes = sum(len(p) for p in partials)
         task = (
             "Merge these part-by-part notes into ONE set of notes for the whole "
-            "recording. Keep every concept, example, formula and action item; "
-            "combine duplicates; order by topic rather than by part."
+            "recording. Keep every concept, example, figure and action item; "
+            "combine only true duplicates; order by topic rather than by part. "
+            f"The merged notes must be at least {int(total_notes * 0.8):,} "
+            "characters: merging is reorganising, not shortening."
         )
+        prompt = f"{task}\n\n{shape}\n\nNotes for each part, in order:\n{source}"
     else:
-        source_label = "Transcript"
-        source = transcript
-        task = "Write the notes for this recording."
+        prompt = (
+            f"Write the notes for this recording.\n\n{shape}\n\n"
+            f"{_length_rule(len(transcript))}\n\nTranscript:\n{transcript}"
+        )
+    if slides:
+        prompt += f"\n\n{SLIDES_RULE}\n\nSlides:\n{slides[:40_000]}"
 
-    raw = _chat(
-        [
-            {"role": "system", "content": SUMMARY_SYSTEM.format(language=_language_rule(lang))},
-            {
-                "role": "user",
-                "content": (
-                    f"{task}\n\nShape of the notes:\n{shape}\n\n"
-                    "Return JSON with exactly these keys:\n"
-                    '  "title": a short specific name for this session, 3-7 words\n'
-                    '  "summary": the notes as one markdown string\n'
-                    '  "keywords": 8-15 terms actually used in the recording that a '
-                    "listener might want explained, most important first\n"
-                    "Keywords belong only in the JSON key; do not add a Keywords "
-                    "section to the summary text.\n\n"
-                    f"{source_label}:\n{source}"
-                ),
-            },
-        ],
+    notes = _strip_fences(_chat(
+        [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
         model=SUMMARY_MODEL,
-        response_format={"type": "json_object"},
-        max_tokens=6000,
-    )
+        max_tokens=12000,
+    ))
+    if len(chunks) == 1:
+        target = _target_length(len(transcript))
+        if len(notes) < target * EXPAND_BELOW:
+            notes = _expand_notes(notes, transcript, shape, system, target)
+    notes, trailing = _split_keyword_section(notes)
 
-    data = json.loads(raw)
-    # Keywords sometimes arrive nested inside the summary object instead of at
-    # the top level. Fall back to that before giving up on them.
-    kw = data.get("keywords")
-    if not kw and isinstance(data.get("summary"), dict):
-        kw = data["summary"].get("keywords")
-    summary, trailing = _split_keyword_section(_as_markdown(data.get("summary")))
+    title, keywords = _title_and_keywords(notes, transcript, lang)
     return {
-        "title": _as_text(data.get("title")) or "Untitled session",
-        "summary": summary,
-        "keywords": _as_keywords(kw) or _as_keywords(trailing),
+        "title": title or "Untitled session",
+        "summary": notes,
+        "keywords": keywords or _as_keywords(trailing),
         "language": lang,
     }
+
+
+EXAM_SHAPE = (
+    "Sections, in this order, as '##' headings translated into the output language:\n"
+    "1. 'Must-know definitions': every term with a one-line definition, "
+    "bolded term first. Ten to twenty-five bullets.\n"
+    "2. 'Formulas and numbers': every equation, procedure, figure, date and "
+    "name, one per bullet. Skip if none.\n"
+    "3. 'Easy to confuse': pairs or groups of concepts that are compared or "
+    "often mixed up, with the distinguishing point.\n"
+    "4. 'Likely exam questions': ten questions of the kind an instructor "
+    "would set on this material, each with a concise model answer in a "
+    "sub-bullet.\n"
+    "5. 'One-minute recap': five to eight sentences that carry the whole "
+    "session, for the walk into the exam."
+)
+
+
+def exam_sheet(notes, kind="lecture", lang=None):
+    """A condensed cram sheet built from the full notes."""
+    if kind != "lecture":
+        return ""
+    return _strip_fences(_chat(
+        [
+            {
+                "role": "system",
+                "content": (
+                    "You compress study notes into a cram sheet for the night before "
+                    "an exam. Work only from the notes given: no outside facts. Output "
+                    "markdown only, headings and bullets, no preamble.\n\n"
+                    + _language_rule(lang)
+                ),
+            },
+            {"role": "user", "content": f"{EXAM_SHAPE}\n\nNotes:\n{notes}"},
+        ],
+        model=SUMMARY_MODEL,
+        max_tokens=5000,
+    ))
 
 
 _KEYWORD_HEADINGS = ("keywords", "key terms", "핵심 용어", "키워드", "キーワード", "关键词")
@@ -306,8 +444,8 @@ _KEYWORD_HEADINGS = ("keywords", "key terms", "핵심 용어", "키워드", "キ
 def _split_keyword_section(markdown):
     """Cut a trailing 'Keywords' section off the notes.
 
-    The model sometimes appends the keyword list to the summary as well as
-    returning it in the JSON key. Returns (notes, keyword_text_or_empty).
+    The model sometimes appends the keyword list to the notes. Returns
+    (notes, keyword_text_or_empty).
     """
     match = re.search(r"\n#{1,4}\s*(%s)\s*:?\s*\n" % "|".join(re.escape(h) for h in _KEYWORD_HEADINGS),
                       "\n" + markdown, re.I)

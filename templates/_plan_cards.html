@@ -1,0 +1,113 @@
+{# Plan cards shared by the landing page, /pricing and the account page.
+   Expects: plans, order, topups, current (plan key or none), payments_open, mode ('landing'|'buy') #}
+<div class="lp-prices">
+  {% for key in order %}{% set p = plans[key] %}
+  <div class="lp-price {{ 'is-featured' if key == 'student' }}" data-plan="{{ key }}">
+    {% if current == key %}<span class="lp-price-flag">{{ _('현재 플랜') }}</span>
+    {% elif key == 'student' %}<span class="lp-price-flag" {% if current %}style="background:var(--sunk); color:var(--ink-mute);"{% endif %}>{{ _('가장 많이 씁니다') }}</span>{% endif %}
+    <h3>{{ _(p.name) }}</h3>
+    <div class="lp-price-amount">{% if lang == 'ko' %}{{ '{:,}'.format(p.price) }}<small>원{% if p.price %} / 월{% endif %}</small>{% else %}<small>₩</small>{{ '{:,}'.format(p.price) }}{% if p.price %}<small> / mo</small>{% endif %}{% endif %}</div>
+    <p class="lp-price-hours">{% if lang == 'ko' %}월 {{ p.minutes // 60 }}시간 · {{ p.blurb }}{% else %}{{ p.minutes // 60 }} hours / month · {{ _(p.blurb) }}{% endif %}</p>
+    <ul>{% for f in p.features %}<li>{{ _(f) }}</li>{% endfor %}</ul>
+    {% if mode == 'landing' %}
+      <a class="btn {{ 'btn-primary' if key == 'student' else 'btn-ghost' }}" href="{{ url_for('auth.login') }}">{{ _('무료로 먼저 써보기') if key == 'student' else _('시작하기') }}</a>
+    {% elif current == key %}
+      <button class="btn btn-ghost" disabled>{{ _('사용 중') }}</button>
+    {% elif not p.price %}
+      <span class="hint">{{ _('구독을 해지하면 무료로 돌아갑니다.') }}</span>
+    {% elif payments_open %}
+      <button type="button" class="btn {{ 'btn-primary' if key == 'student' else 'btn-ghost' }} buy-btn" data-item="{{ key }}" data-name="{{ _(p.name) }}">{{ _('이 플랜으로') }}</button>
+    {% else %}
+      <button class="btn btn-ghost" disabled>{{ _('준비 중') }}</button>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<div class="topups">
+  <div>
+    <p class="section-label" style="margin:0 0 4px;">{{ _('추가 크레딧') }}</p>
+    <p class="hint" style="margin:0;">{{ _('이번 달 시간을 다 쓰면 크레딧이 이어서 쓰입니다. 크레딧은 만료되지 않습니다. 프로는 20% 할인.') }}</p>
+  </div>
+  <div class="topup-list">
+    {% for key, t in topups.items() %}
+    <div class="topup">
+      <strong>{{ _(t.name) }}</strong>
+      <span class="topup-price">{% if lang == 'ko' %}{{ '{:,}'.format(t.price) }}원{% else %}₩{{ '{:,}'.format(t.price) }}{% endif %}</span>
+      {% if mode == 'landing' %}<a class="btn btn-ghost btn-sm" href="{{ url_for('auth.login') }}">{{ _('시작하기') }}</a>
+      {% elif payments_open %}<button type="button" class="btn btn-ghost btn-sm buy-btn" data-item="{{ key }}" data-name="{{ _(t.name) }}">{{ _('구매') }}</button>
+      {% else %}<button class="btn btn-ghost btn-sm" disabled>{{ _('준비 중') }}</button>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{% if mode == 'buy' %}
+<div class="modal" id="buy-modal" hidden>
+  <div class="modal-card">
+    <p class="section-label">{{ _('결제') }}</p>
+    <h3 id="buy-name" style="margin:0 0 14px;"></h3>
+    <label class="hint" for="buy-code">{{ _('할인 코드가 있으면 입력하세요') }}</label>
+    <div style="display:flex; gap:8px; margin:6px 0 12px;">
+      <input class="input" id="buy-code" placeholder="{{ _('코드') }}" autocomplete="off" style="text-transform:uppercase;">
+      <button type="button" class="btn btn-ghost btn-sm" id="buy-apply">{{ _('적용') }}</button>
+    </div>
+    <div class="quote" id="buy-quote"></div>
+    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:18px;">
+      <button type="button" class="btn btn-ghost" id="buy-cancel">{{ _('닫기') }}</button>
+      <button type="button" class="btn btn-primary" id="buy-go">{{ _('결제하기') }}</button>
+    </div>
+    <p class="hint" style="margin-top:12px;">{{ _('구독은 매달 자동 갱신되며 계정 페이지에서 언제든 해지할 수 있습니다. 할인 코드는 첫 달에 적용됩니다.') }}</p>
+  </div>
+</div>
+<script>
+// Runs after base.html has defined window.I18N and common.js.
+document.addEventListener('DOMContentLoaded', function () {
+  const T = window.I18N;
+  const modal = document.getElementById('buy-modal');
+  const nameEl = document.getElementById('buy-name');
+  const codeEl = document.getElementById('buy-code');
+  const quoteEl = document.getElementById('buy-quote');
+  const goBtn = document.getElementById('buy-go');
+  let item = null;
+
+  const won = (n) => T.lang === 'ko' ? `${n.toLocaleString()}원` : `₩${n.toLocaleString()}`;
+
+  async function refresh() {
+    quoteEl.textContent = '…';
+    try {
+      const q = await api('/api/billing/quote', { method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ item, code: codeEl.value.trim() }) });
+      let html = `<div class="quote-row"><span>${T.listPrice}</span><span>${won(q.list_price)}</span></div>`;
+      if (q.discount) html += `<div class="quote-row is-discount"><span>${q.promo_note || T.discount}</span><span>-${won(q.discount)}</span></div>`;
+      html += `<div class="quote-row is-total"><span>${T.total}</span><span>${won(q.amount)}${q.kind === 'subscription' ? T.perMonth : ''}</span></div>`;
+      quoteEl.innerHTML = html;
+      goBtn.disabled = false;
+    } catch (err) {
+      quoteEl.innerHTML = `<span class="hint" style="color:var(--bad);">${err.message}</span>`;
+      goBtn.disabled = true;
+    }
+  }
+
+  document.querySelectorAll('.buy-btn').forEach((btn) => btn.addEventListener('click', () => {
+    item = btn.dataset.item;
+    nameEl.textContent = btn.dataset.name;
+    codeEl.value = '';
+    modal.hidden = false;
+    refresh();
+  }));
+  document.getElementById('buy-apply').addEventListener('click', refresh);
+  codeEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); refresh(); } });
+  document.getElementById('buy-cancel').addEventListener('click', () => { modal.hidden = true; });
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
+  goBtn.addEventListener('click', async () => {
+    goBtn.disabled = true;
+    try {
+      const data = await api('/api/billing/checkout', { method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ item, code: codeEl.value.trim() }) });
+      window.location.href = data.url;
+    } catch (err) { toast(err.message, 'bad'); goBtn.disabled = false; }
+  });
+});
+</script>
+{% endif %}

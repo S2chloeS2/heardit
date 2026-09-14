@@ -47,6 +47,7 @@
           <a class="nav-link" href="{{ url_for('auth.logout') }}">{{ _('로그아웃') }}</a>
         </div>
       {% else %}
+        <a class="nav-link" href="{{ url_for('pricing') }}">{{ _('요금') }}</a>
         <a class="nav-link" href="{{ url_for('auth.login') }}">{{ _('로그인') }}</a>
         <a class="btn btn-primary btn-sm" href="{{ url_for('auth.login') }}">{{ _('무료로 시작하기') }}</a>
       {% endif %}
@@ -91,6 +92,17 @@
       accountDeleteConfirm: "{{ _('정말 계정과 모든 데이터를 삭제할까요? 되돌릴 수 없습니다.') }}",
       requestFailed: "{{ _('요청이 실패했습니다') }}",
       defaultMic: "{{ _('기본 마이크') }}",
+      examHint: "{{ _('정의 · 공식 · 예상 문제만 추린 한 장') }}",
+      notesHint: "{{ _('빠짐없이 적은 노트') }}",
+      exportExam: "{{ _('시험 요약') }}",
+      viewSlides: "{{ _('자료 보기') }}",
+      attachSlides: "{{ _('자료 PDF 붙이기') }}",
+      slidesAttached: "{{ _('자료를 붙였습니다. 다음 요약부터 반영됩니다.') }}",
+      slidesNoText: "{{ _('PDF에서 글자를 읽지 못했습니다. 스캔본이면 보기만 됩니다.') }}",
+      slidesRemoveConfirm: "{{ _('붙인 자료를 뗄까요?') }}",
+      listPrice: "{{ _('정가') }}", discount: "{{ _('할인') }}", total: "{{ _('결제 금액') }}", perMonth: "{{ _(' / 월') }}",
+      codeApplied: "{{ _('코드가 적용되었습니다.') }}",
+      paid: "{{ _('결제가 완료되었습니다.') }}",
       inputDevice: "{{ _('입력 장치') }}"
     };
   </script>

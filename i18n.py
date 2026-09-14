@@ -18,11 +18,15 @@ _missing = set()
 
 
 def current_lang():
-    if getattr(g, "lang", None):
+    try:
+        if getattr(g, "lang", None):
+            return g.lang
+        lang = session.get("lang")
+        g.lang = lang if lang in LANGS else DEFAULT
         return g.lang
-    lang = session.get("lang")
-    g.lang = lang if lang in LANGS else DEFAULT
-    return g.lang
+    except RuntimeError:
+        # Outside a request (scripts, tests): the default language.
+        return DEFAULT
 
 
 def _(text):
@@ -384,4 +388,94 @@ TRANSLATIONS = {
     "지금은 초대받은 계정만 쓸 수 있습니다.": "Sign-in is currently invite-only.",
     "서비스 전체 월 처리량": "Service-wide monthly capacity",
     "전체 사용자 합산. 이 한도를 넘으면 새 전사가 멈춥니다.": "All users combined. New transcription pauses when this is reached.",
+    # Billing, pricing, slides, exam sheet
+    ' / 월': ' / mo',
+    '15시간 크레딧': '15-hour credit pack',
+    '5시간 크레딧': '5-hour credit pack',
+    'PDF 파일만 올릴 수 있습니다.': 'Only PDF files can be attached.',
+    'PDF는 {n}MB까지 올릴 수 있습니다.': 'PDFs up to {n} MB.',
+    'PDF를 읽지 못했습니다: {err}': 'Could not read the PDF: {err}',
+    'PDF에서 글자를 읽지 못했습니다. 스캔본이면 보기만 됩니다.': 'No text could be read from the PDF. A scanned file can only be viewed.',
+    '{n}% 할인': '{n}% off',
+    '{n}원 할인': '₩{n} off',
+    '{plan} 플랜은 {date}까지입니다.': 'The {plan} plan runs until {date}.',
+    '강의 자료': 'Slides',
+    '강의 자료 PDF 나란히 보기': 'Slides PDF side by side',
+    '강의 자료와 나란히': 'Side by side with the slides',
+    '갱신': 'renewal',
+    '결제': 'Checkout',
+    '결제 금액': 'Total',
+    '결제 내역': 'Billing history',
+    '결제가 완료되었습니다.': 'Payment complete.',
+    '결제는 Stripe에서 처리되며 카드 정보는 저희 서버에 저장되지 않습니다.': 'Payments are handled by Stripe; card details never touch our server.',
+    '결제를 준비하고 있습니다. 열리면 계정 페이지에서 바로 결제할 수 있습니다.': 'Payments are not open yet. When they are, you can pay from the account page.',
+    '결제를 준비하고 있습니다. 열리면 여기서 바로 결제할 수 있습니다.': 'Payments are not open yet. When they are, you can pay right here.',
+    '결제하기': 'Pay',
+    '과목 단위 질문': 'Ask across a whole course',
+    '구독 관리 · 해지': 'Manage or cancel subscription',
+    '구독은 매달 자동 갱신되며 계정 페이지에서 언제든 해지할 수 있습니다. 할인 코드는 첫 달에 적용됩니다.': 'Subscriptions renew monthly and can be cancelled any time from the account page. Discount codes apply to the first month.',
+    '구독을 해지하면 무료로 돌아갑니다.': 'Cancelling a subscription returns you here.',
+    '구매': 'Buy',
+    '그날 기록 안에서만 답하고, 없는 내용은 없다고 말합니다. 시험 전날 잘못된 답을 외우지 않습니다.': "It answers only from that day's recording and says so when something was not covered. You will not memorise a wrong answer the night before an exam.",
+    '기간이 지난 코드입니다.': 'That code has expired.',
+    '긴 파일 우선 처리': 'Priority for long files',
+    '날짜': 'Date',
+    '녹음을 보관하고 문장마다 위치를 기억합니다. 받아쓴 게 이상하면 바로 확인.': 'Recordings are kept and every line knows its position. If a line looks wrong, check it in a tap.',
+    '다른 받아쓰기 앱과 무엇이 다른가': 'What makes it different from other transcription apps',
+    '닫기': 'Close',
+    '등록': 'Redeem',
+    '떼기': 'Remove',
+    '로컬 테스트 빌드라 결제창 없이 바로 적용됩니다. 배포 환경에서는 Stripe 결제창이 열립니다.': 'This is a local test build, so purchases apply instantly without a checkout. In production the Stripe checkout opens.',
+    '무엇이 다른지 자세히 보기': 'See what makes it different',
+    '문장 눌러 다시 듣기': 'Tap a line to hear it again',
+    '문장을 누르면 다시 들립니다': 'Tap a line to hear it again',
+    '바꾸기': 'Replace',
+    '받아적은 시간만 셉니다. 노트, 시험 요약, 챗, 번역, 다시 듣기는 모두 포함입니다. 언제든 해지할 수 있습니다.': 'Only transcribed time counts. Notes, exam sheets, chat, translation and replay are all included. Cancel any time.',
+    '붙인 자료를 뗄까요?': 'Remove the attached slides?',
+    '빠짐없이 적은 노트': 'Complete notes, nothing left out',
+    '빠짐없이 적은 전체 노트와, 정의·공식·예상 문제만 추린 시험 전날용 한 장.': 'Complete notes with nothing left out, plus a one-page cram sheet of definitions, formulas and likely questions.',
+    '사용 가능 횟수를 모두 쓴 코드입니다.': 'That code has been used up.',
+    '상태': 'Status',
+    '스튜던트': 'Student',
+    '스튜던트의 모든 기능': 'Everything in Student',
+    '슬라이드 PDF를 붙이면 옆에서 같이 보고, 노트를 만들 때 용어와 공식을 슬라이드 기준으로 맞춥니다.': 'Attach the slides PDF to view it alongside, and the notes use it to get terms and formulas exactly right.',
+    '시험 노트 · 핵심 용어 · AI 챗': 'Exam notes · key terms · AI chat',
+    '시험 노트 두 종류': 'Two kinds of exam notes',
+    '시험 요약': 'Exam sheet',
+    '실시간 번역': 'Live translation',
+    '써보기': 'Try it',
+    '없는 코드입니다.': 'No such code.',
+    '영어 강의 밑에 한국어 한 줄. 16개 언어.': 'A Korean line under every English sentence, or any of 16 languages.',
+    '완료': 'Paid',
+    '이 오디오는 {need}인데 남은 시간이 {left}입니다. 더 짧은 파일을 올리거나 크레딧을 더해주세요.': 'This audio is {need} but only {left} is left. Upload a shorter file or add credit.',
+    '이 코드는 결제창이 아니라 계정 페이지에서 등록하는 코드입니다.': 'This code is redeemed on the account page, not at checkout.',
+    '이 코드는 결제할 때 입력하는 할인 코드입니다.': 'This is a discount code: enter it at checkout.',
+    '이미 사용한 코드입니다.': 'You have already used that code.',
+    '이번 달 {plan} 플랜의 {limit}을 다 썼습니다. 다음 달 1일에 초기화되거나, 플랜을 올리거나 크레딧을 더하면 바로 이어서 쓸 수 있습니다.': "You have used this month's {limit} on the {plan} plan. It resets on the 1st, or upgrade or add credit to continue now.",
+    '이번 달 시간을 다 쓰면 크레딧이 이어서 쓰입니다. 크레딧은 만료되지 않습니다. 프로는 20% 할인.': "Credit is used once the month's hours are gone. It never expires. 20% off on Pro.",
+    '이번 달 시간을 다 쓴 뒤에 쓰입니다. 만료되지 않습니다.': "Used after this month's hours are gone. Never expires.",
+    '자료 PDF 붙이기': 'Attach slides PDF',
+    '자료 보기': 'View slides',
+    '자료를 붙였습니다. 다음 요약부터 반영됩니다.': 'Slides attached. They will be used from the next summary.',
+    '적용': 'Apply',
+    '전체 노트': 'Full notes',
+    '정가': 'List price',
+    '정의 · 공식 · 예상 문제만 추린 한 장': 'One page of definitions, formulas and likely questions',
+    '지어내지 않는 챗': 'A chat that does not make things up',
+    '첫 달에 적용': 'applied to the first month',
+    '초대 코드나 개발자 코드는 여기에 넣으면 플랜이 바로 적용됩니다. 할인 코드는 결제할 때 입력하세요.': 'Invite and developer codes go here and apply a plan immediately. Discount codes are entered at checkout.',
+    '추가 크레딧': 'Extra credit',
+    '추가 크레딧 20% 할인': '20% off credit packs',
+    '코드': 'Code',
+    '코드 등록': 'Redeem a code',
+    '코드가 적용되었습니다.': 'Code applied.',
+    '코드를 입력해주세요.': 'Enter a code.',
+    '크레딧': 'Credit',
+    '테스트': 'test',
+    '한 학기 강의를 폴더로 묶어 "3주차와 5주차가 어떻게 다르게 설명했지?"를 물을 수 있습니다.': 'Group a semester into a folder and ask "how did week 3 and week 5 explain this differently?"',
+    '할인': 'Discount',
+    '할인 코드가 있으면 입력하세요': 'Enter a discount code if you have one',
+    '항목': 'Item',
+    '회의가 잦은 팀과 연구자': 'Teams and researchers with frequent meetings',
+
 }

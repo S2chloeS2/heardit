@@ -24,6 +24,7 @@ load_dotenv()
 
 import ai
 import auth
+import billing
 import db
 import engines
 import i18n
@@ -200,7 +201,7 @@ def session_language(session):
 
 @app.route("/")
 def landing():
-    return render_template("landing.html")
+    return render_template("landing.html", plans=plans.PLANS, order=plans.ORDER, topups=plans.TOPUPS)
 
 
 @app.route("/new")
@@ -272,9 +273,23 @@ def folder_view(folder_id):
 @app.route("/account")
 @auth.login_required
 def account():
+    user = auth.current_user()
     return render_template(
-        "account.html", plans=plans.PLANS, order=plans.ORDER,
-        can_switch=auth.dev_login_allowed(), budget=plans.budget_status(),
+        "account.html", plans=plans.PLANS, order=plans.ORDER, topups=plans.TOPUPS,
+        budget=plans.budget_status(), orders=db.list_orders(user["id"]),
+        payments_open=billing.stripe_ready() or auth.dev_login_allowed(),
+        simulated=not billing.stripe_ready() and auth.dev_login_allowed(),
+        has_portal=billing.stripe_ready() and bool(user.get("stripe_customer_id")),
+    )
+
+
+@app.route("/pricing")
+def pricing():
+    user = auth.current_user()
+    return render_template(
+        "pricing.html", plans=plans.PLANS, order=plans.ORDER, topups=plans.TOPUPS,
+        current=plans.plan_key(user) if user else None,
+        payments_open=billing.stripe_ready() or auth.dev_login_allowed(),
     )
 
 
@@ -383,18 +398,81 @@ def api_folder_chat(folder_id):
 
 # ------------------------------------------------------------------- account
 
-@app.route("/api/account/plan", methods=["POST"])
+@app.route("/api/billing/quote", methods=["POST"])
 @auth.login_required
-def api_set_plan():
-    """Switch plans by hand. Only while payment is not wired up, and only on a
-    local dev build — a deployed server refuses this outright."""
-    if not auth.dev_login_allowed():
-        return fail(i18n._("결제 연동 전에는 플랜을 직접 바꿀 수 없습니다."), 403)
-    plan = ((request.get_json(silent=True) or {}).get("plan") or "").strip()
-    if plan not in plans.PLANS:
-        return fail(i18n._("없는 플랜입니다."))
-    db.set_plan(auth.current_user()["id"], plan)
-    return jsonify({"ok": True, "plan": plan})
+def api_billing_quote():
+    body = request.get_json(silent=True) or {}
+    try:
+        q = billing.quote(body.get("item"), auth.current_user(), code=(body.get("code") or "").strip() or None)
+    except billing.BillingError as exc:
+        return fail(str(exc))
+    return jsonify({k: v for k, v in q.items() if k != "item"} | {"item": q["item"]["key"], "name": i18n._(q["item"]["name"])})
+
+
+@app.route("/api/billing/checkout", methods=["POST"])
+@auth.login_required
+def api_billing_checkout():
+    """Start a purchase. Stripe when configured; a simulated instant purchase
+    on a local dev build; refused on a production build without Stripe."""
+    user = auth.current_user()
+    body = request.get_json(silent=True) or {}
+    try:
+        q = billing.quote(body.get("item"), user, code=(body.get("code") or "").strip() or None)
+    except billing.BillingError as exc:
+        return fail(str(exc))
+
+    if billing.stripe_ready():
+        try:
+            url = billing.checkout_url(
+                user, q,
+                success_url=url_for("account", _external=True) + "?paid=1",
+                cancel_url=url_for("pricing", _external=True),
+            )
+        except Exception as exc:
+            app.logger.error("checkout failed: %s", traceback.format_exc())
+            return fail(str(exc), 502)
+        return jsonify({"url": url})
+
+    if auth.dev_login_allowed():
+        billing.fulfil(user, q, "simulated", f"sim:{user['id']}:{int(time.time() * 1000)}")
+        return jsonify({"url": url_for("account") + "?paid=1", "simulated": True})
+
+    return fail(i18n._("결제를 준비하고 있습니다. 열리면 계정 페이지에서 바로 결제할 수 있습니다."), 503)
+
+
+@app.route("/api/billing/portal", methods=["POST"])
+@auth.login_required
+def api_billing_portal():
+    try:
+        return jsonify({"url": billing.portal_url(auth.current_user(), url_for("account", _external=True))})
+    except Exception as exc:
+        return fail(str(exc), 502)
+
+
+@app.route("/api/billing/webhook", methods=["POST"])
+def api_billing_webhook():
+    if not billing.stripe_ready():
+        abort(404)
+    try:
+        note = billing.handle_webhook(request.get_data(), request.headers.get("Stripe-Signature", ""))
+    except Exception as exc:
+        app.logger.error("webhook rejected: %s", exc)
+        return fail("bad webhook", 400)
+    return jsonify({"ok": True, "note": note})
+
+
+@app.route("/api/billing/redeem", methods=["POST"])
+@auth.login_required
+def api_billing_redeem():
+    """Comp codes: a plan for free, for the owner and invited reviewers."""
+    code = ((request.get_json(silent=True) or {}).get("code") or "").strip()
+    if not code:
+        return fail(i18n._("코드를 입력해주세요."))
+    try:
+        plan, until = billing.redeem_comp(code, auth.current_user())
+    except billing.BillingError as exc:
+        return fail(str(exc))
+    return jsonify({"ok": True, "plan": plan, "until": until})
 
 
 # ------------------------------------------------------------- transcription
@@ -443,7 +521,7 @@ def api_transcribe(session_id):
             kind=session.get("kind", "lecture"),
             prompt=db.get_transcript(session_id),
         )
-        db.log_usage(user["id"], session_id, seconds)
+        plans.record_usage(user["id"], session_id, seconds, user)
         if text:
             # Keep the clip so this line can be played back later.
             name = f"clip-{int(time.time() * 1000)}{suffix}"
@@ -588,7 +666,7 @@ def _run_pipeline(session_id, path, workdir):
         kind = session.get("kind", "lecture")
         # The request was already checked against the plan; now record what it
         # actually cost, from the file itself.
-        db.log_usage(session.get("user_id"), session_id, media.duration_of(path))
+        plans.record_usage(session.get("user_id"), session_id, media.duration_of(path))
         # Meetings want to know who spoke; lectures are one voice, so we skip
         # diarization there and use the cheaper engine.
         diarize = kind == "meeting"
@@ -653,10 +731,15 @@ def _build_summary(session_id):
     if not transcript:
         raise ValueError("There is nothing transcribed in this session yet.")
 
-    result = ai.summarize(
-        transcript, kind=session.get("kind", "lecture"), lang=session_language(session)
-    )
+    kind = session.get("kind", "lecture")
+    lang = session_language(session)
+    result = ai.summarize(transcript, kind=kind, lang=lang, slides=session.get("attachment_text"))
     fields = {"summary": result["summary"], "keywords": result["keywords"]}
+    try:
+        fields["exam_sheet"] = ai.exam_sheet(result["summary"], kind=kind, lang=lang)
+    except Exception:
+        # The notes are the product; a failed cram sheet must not lose them.
+        app.logger.error("exam sheet failed: %s", traceback.format_exc())
     if result.get("language") and not session.get("language"):
         fields["language"] = result["language"]
     # Only adopt the generated title if the user has not set one of their own.
@@ -682,6 +765,7 @@ def api_summary(session_id):
     session = db.get_session(session_id)
     return jsonify({
         "summary": session["summary"],
+        "exam_sheet": session.get("exam_sheet") or "",
         "keywords": _keywords_of(session),
         "title": session["title"],
     })
@@ -767,6 +851,75 @@ def api_transcript(session_id):
     if not owned(session_id):
         return fail(i18n._("No such session."), 404)
     return jsonify({"segments": db.get_segments(session_id)})
+
+
+# ------------------------------------------------------------ attachments
+
+ATTACHMENT_MAX_MB = int(os.getenv("ATTACHMENT_MAX_MB", "30"))
+ATTACHMENT_TEXT_CAP = 60_000
+
+
+def _pdf_text(path):
+    """Text of a PDF, capped, for the notes. Scanned PDFs yield nothing."""
+    from pypdf import PdfReader
+    out = []
+    used = 0
+    for i, page in enumerate(PdfReader(path).pages, start=1):
+        text = (page.extract_text() or "").strip()
+        if not text:
+            continue
+        block = f"[p.{i}] {text}\n"
+        if used + len(block) > ATTACHMENT_TEXT_CAP:
+            break
+        out.append(block)
+        used += len(block)
+    return "".join(out)
+
+
+@app.route("/api/sessions/<int:session_id>/attachment", methods=["POST", "DELETE"])
+@auth.login_required
+def api_attachment(session_id):
+    """Slides (PDF) kept beside a note: viewed alongside it, and read into
+    the notes when they are generated."""
+    if not owned(session_id):
+        return fail(i18n._("No such session."), 404)
+    path = os.path.join(session_audio_dir(session_id), "slides.pdf")
+
+    if request.method == "DELETE":
+        if os.path.exists(path):
+            os.unlink(path)
+        db.update_session(session_id, attachment_name=None, attachment_text=None)
+        return jsonify({"ok": True})
+
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        return fail(i18n._("No file was attached."))
+    if not upload.filename.lower().endswith(".pdf"):
+        return fail(i18n._("PDF 파일만 올릴 수 있습니다."))
+    upload.save(path)
+    if os.path.getsize(path) > ATTACHMENT_MAX_MB * 1024 * 1024:
+        os.unlink(path)
+        return fail(i18n._("PDF는 {n}MB까지 올릴 수 있습니다.").format(n=ATTACHMENT_MAX_MB), 413)
+    try:
+        text = _pdf_text(path)
+    except Exception as exc:
+        os.unlink(path)
+        return fail(i18n._("PDF를 읽지 못했습니다: {err}").format(err=str(exc)[:120]))
+    name = os.path.basename(upload.filename)[:160]
+    db.update_session(session_id, attachment_name=name, attachment_text=text)
+    return jsonify({"name": name, "chars": len(text),
+                    "url": url_for("api_attachment_file", session_id=session_id)})
+
+
+@app.route("/api/sessions/<int:session_id>/attachment")
+@auth.login_required
+def api_attachment_file(session_id):
+    if not owned(session_id):
+        abort(404)
+    path = os.path.join(AUDIO_DIR, str(session_id), "slides.pdf")
+    if not os.path.isfile(path):
+        abort(404)
+    return send_file(path, mimetype="application/pdf", conditional=True, max_age=3600)
 
 
 # ----------------------------------------------------------- audio & translate

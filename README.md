@@ -34,14 +34,16 @@ Every answer quotes the line it came from. Every summary is built from the words
 |---|---|
 | **Five ways in** | Computer audio (Zoom / YouTube tab), the room (mic), both mixed, a pasted link (YouTube · TED), or an uploaded recording (Zoom / Teams local files) |
 | **Live captions** | Audio is cut into ~6 s clips and transcribed as it comes; the running transcript primes the next clip so terminology stays consistent |
-| **Study notes, not blurbs** | Lecture summaries are exam-revision notes: every concept as the speaker defined it, every example, formulas, what was emphasised, and self-test questions. Long recordings are summarised part by part and merged so the middle is not skipped. Meetings get decisions, owners and open questions |
+| **Study notes, not blurbs** | Lecture notes are held to a length floor (about half the transcript) and a second pass adds anything the first draft skipped. Every concept as the speaker defined it, every example, formulas, what was emphasised, self-test questions. Long recordings are summarised part by part and merged. Meetings get decisions, owners and open questions |
+| **Exam sheet** | A second, condensed view of the same session: must-know definitions, formulas and numbers, easy-to-confuse pairs, ten likely exam questions with answers, a one-minute recap |
+| **Slides beside the notes** | Attach the lecture's PDF: it opens in a panel next to the transcript, and its text is fed to the notes so terms and formulas match the slides |
 | **Replay any line** | Recordings are kept; tap a transcript line to hear that moment again, with the highlight following playback |
 | **Live translation** | Turn on a second line under each sentence in Korean, English, Japanese and more; cached per line |
 | **Key terms** | Extracted from the transcript; tap one for an explanation that starts with how *this* speaker used it. Saved, so it is instant next time |
 | **Grounded chat** | Answers only from the transcript, with quotes. Off-topic questions are refused in one sentence |
 | **Folders** | Group a course's lectures and ask across all of them — "How did weeks 3 and 5 explain scheduling differently?" — with the source lecture named |
 | **Speaker separation** | For uploaded meetings: who spoke, how much, and a summary that says who committed to what |
-| **Plans & metering** | Free 5 h / Standard 25 h / Pro 60 h per month, metered on transcribed audio only; overruns return a clear 402 |
+| **Plans, credits, codes** | Free 2 h / Student 20 h / Pro 45 h per month plus one-time credit packs that never expire, metered on transcribed audio only. Stripe Checkout for subscriptions and packs, webhook-driven fulfilment, billing history on the account page. Promo codes: percentage or fixed discounts floored so no sale drops below cost, and comp codes that grant a plan outright for the owner and reviewers |
 | **Two languages** | English by default, Korean with one click — UI, toasts, and API errors alike. The recording's language is detected once and every AI output is written in it explicitly |
 
 Audio is never stored: it is deleted the moment it becomes text.
@@ -69,7 +71,8 @@ app.py        Flask routes, import pipeline, production guards, per-user rate li
 ai.py         OpenAI prompts — staged study notes, language detection, translation, grounding rules
 engines.py    Transcription back ends behind one interface (AssemblyAI · Groq · OpenAI)
 db.py         SQLite: users, sessions, segments, folders, keyword notes, usage
-plans.py      Plan definitions and monthly allowance checks
+plans.py      Plans, credit packs, allowance and credit consumption, promo floor
+billing.py    Stripe Checkout, webhook fulfilment, promo validation, comp codes
 i18n.py       Korean-source → English translation table, per-visitor language
 media.py      yt-dlp download (TED → YouTube fallback), ffmpeg split, SSRF guard
 static/js/    capture.js (three audio sources, one interface) · session · folder · new
@@ -103,8 +106,11 @@ missing. Rate limiting, upload caps, private-network blocking, and secure cookie
 free tier there is no disk, so both are lost on redeploy. Notes use `SUMMARY_MODEL` (gpt-4o by
 default); chat, keywords and translation stay on gpt-4o-mini.
 
-**Not yet wired:** payments (plan structure and metering are complete; Toss/Stripe is the next
-step) and a hosted URL.
+**Payments.** Set `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` and point a Stripe webhook at
+`/api/billing/webhook` (events: `checkout.session.completed`, `invoice.paid`,
+`customer.subscription.deleted`). Without them a local build simulates purchases so the flow can
+be tested, and production shows "payments not open yet". Promo codes are managed with
+`scripts/promo.py` (`add CODE --percent 20`, `add CODE --comp pro --months 12`, `list`, `rm`).
 
 ## Status
 
