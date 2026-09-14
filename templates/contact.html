@@ -24,7 +24,7 @@
     {% endif %}
     <label><span class="section-label">{{ _('주제') }}</span>
       <select class="input" name="topic" style="width:100%;">
-        {% for t in topics %}<option value="{{ t }}" {{ 'selected' if form.get('topic') == t }}>{{ _({'billing':'결제','bug':'오류','feature':'기능 제안','other':'기타'}[t]) }}</option>{% endfor %}
+        {% for t in topics %}<option value="{{ t }}" {{ 'selected' if form.get('topic') == t }}>{{ _({'billing':'결제 문의','bug':'오류','feature':'기능 제안','other':'기타'}[t]) }}</option>{% endfor %}
       </select></label>
     <label><span class="section-label">{{ _('내용') }}</span><textarea class="input" name="message" rows="7" required style="width:100%; resize:vertical;">{{ form.get('message','') }}</textarea></label>
     <div><button type="submit" class="btn btn-primary">{{ _('보내기') }}</button></div>
