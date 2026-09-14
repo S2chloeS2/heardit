@@ -932,3 +932,13 @@ html, body { overflow-x: clip; }
 .slides-panel[hidden] { display: none; }
 .slides-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--rule); }
 #slides-frame { flex: 1; width: 100%; border: 0; min-height: 60vh; background: #fff; }
+
+.is-locked { opacity: .7; text-decoration: none; }
+.notes-textarea { width: 100%; min-height: 240px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13.5px; line-height: 1.6; resize: vertical; }
+.compare { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 44px; }
+.compare th, .compare td { padding: 11px 12px; border-bottom: 1px solid var(--rule); text-align: center; }
+.compare th:first-child, .compare td:first-child { text-align: left; color: var(--ink-soft); }
+.compare th { font-weight: 640; font-size: 14px; }
+.compare th.is-featured { color: var(--accent); }
+.compare .yes { color: var(--accent); font-weight: 700; }
+.compare .no { color: var(--ink-mute); }

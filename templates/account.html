@@ -20,7 +20,7 @@
           <div class="usage-big-num">{{ allowance.remaining_label }} <small>{{ _('남음') }}</small></div>
           <p class="hint">{{ _('{plan} 플랜 · 월 {limit} 중 {used} 사용').format(plan=_(allowance.plan.name), limit=allowance.limit_label, used=allowance.used_label) }}</p>
         </div>
-        <span class="tag tag-accent">{{ _(allowance.plan.name) }}</span>
+        <span class="tag tag-accent">{{ _(allowance.plan.name) }}{% if owner %} · {{ _('운영자') }}{% endif %}</span>
       </div>
       <div class="progress-shell" style="height:8px; margin-top:16px;"><div class="progress-bar {{ 'is-low' if allowance.used_pct >= 85 }}" style="width:{{ allowance.used_pct }}%"></div></div>
       <p class="hint" style="margin-top:12px;">{{ _('사용량은 받아적은 오디오 길이로 계산합니다. 요약·키워드·챗은 따로 세지 않습니다.') }} {{ _('매달 1일에 초기화됩니다.') }}</p>

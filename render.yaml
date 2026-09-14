@@ -36,6 +36,10 @@ services:
       # Empty means ANY Google account can sign in and spend your API credits.
       - key: ALLOWED_EMAILS
         sync: false
+      - key: OWNER_EMAILS
+        sync: false
+      - key: PROMO_SEED
+        sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_WEBHOOK_SECRET

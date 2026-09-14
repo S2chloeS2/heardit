@@ -43,7 +43,8 @@ Every answer quotes the line it came from. Every summary is built from the words
 | **Grounded chat** | Answers only from the transcript, with quotes. Off-topic questions are refused in one sentence |
 | **Folders** | Group a course's lectures and ask across all of them — "How did weeks 3 and 5 explain scheduling differently?" — with the source lecture named |
 | **Speaker separation** | For uploaded meetings: who spoke, how much, and a summary that says who committed to what |
-| **Plans, credits, codes** | Free 2 h / Student 20 h / Pro 45 h per month plus one-time credit packs that never expire, metered on transcribed audio only. Stripe Checkout for subscriptions and packs, webhook-driven fulfilment, billing history on the account page. Promo codes: percentage or fixed discounts floored so no sale drops below cost, and comp codes that grant a plan outright for the owner and reviewers |
+| **Plans, credits, codes** | Free 2 h / Student 15 h (₩14,900) / Pro 30 h (₩29,900) per month plus credit packs that never expire, metered on transcribed audio only. Every tier is priced above its full-usage cost (~₩750/h). Paid tiers unlock premium notes and the exam sheet, note editing, kept recordings with replay, slides, translation, notes in any language, folders; Pro adds speaker separation. Gates are enforced server-side. Stripe Checkout, webhook fulfilment, billing history. Promo codes (discounts floored at 55% of list, comp codes for the owner and reviewers), seedable from an env var; `OWNER_EMAILS` accounts always have Pro |
+| **Editable notes** | Notes and the exam sheet open as markdown and save in place; the language of the notes can be set per session independently of the lecture's language |
 | **Two languages** | English by default, Korean with one click — UI, toasts, and API errors alike. The recording's language is detected once and every AI output is written in it explicitly |
 
 Audio is never stored: it is deleted the moment it becomes text.
@@ -110,7 +111,11 @@ default); chat, keywords and translation stay on gpt-4o-mini.
 `/api/billing/webhook` (events: `checkout.session.completed`, `invoice.paid`,
 `customer.subscription.deleted`). Without them a local build simulates purchases so the flow can
 be tested, and production shows "payments not open yet". Promo codes are managed with
-`scripts/promo.py` (`add CODE --percent 20`, `add CODE --comp pro --months 12`, `list`, `rm`).
+`scripts/promo.py` (`add CODE --percent 20`, `add CODE --comp pro --months 12`, `list`, `rm`) or
+seeded from `PROMO_SEED` at startup. Free-tier notes are deleted after 30 days by a daily sweep.
+
+**Opening to the public:** leave `ALLOWED_EMAILS` empty, set `OWNER_EMAILS` to your own address,
+and keep `MONTHLY_BUDGET_MINUTES` as the hard ceiling on total spend.
 
 ## Status
 

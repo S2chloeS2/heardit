@@ -3,7 +3,7 @@
 {% set art = 'images/story/' %}
 
 {% block body %}
-<div class="page" data-session-id="{{ session.id }}" data-source="{{ session.source }}" id="session-root">
+<div class="page" data-session-id="{{ session.id }}" data-source="{{ session.source }}" data-replay="{{ '1' if feat.replay else '' }}" id="session-root">
 
   <header class="session-head">
     <div style="flex:1; min-width:240px;">
@@ -17,6 +17,7 @@
           {% else %}{{ _('마이크') }}{% endif %}
         </span>
         <span class="tag" id="live-tag" style="display:none;"><span class="dot-live"></span> {{ _('녹음 중') }}</span>
+        {% if feat.folders %}
         <label class="folder-pick" title="{{ _('폴더에 넣으면 폴더 단위로 한꺼번에 질문할 수 있습니다') }}">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
             <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
@@ -26,11 +27,16 @@
             {% for f in folders %}<option value="{{ f.id }}" {{ 'selected' if session.folder_id == f.id }}>{{ f.name }}</option>{% endfor %}
           </select>
         </label>
+        {% endif %}
       </div>
     </div>
     <div class="session-actions">
       <input type="file" id="slides-file" accept="application/pdf" hidden>
+      {% if feat.slides %}
       <button type="button" class="btn btn-ghost btn-sm" id="slides-btn" data-has="{{ '1' if session.attachment_name else '' }}" data-url="{{ url_for('api_attachment_file', session_id=session.id) }}" title="{{ session.attachment_name or '' }}">{{ _('자료 보기') if session.attachment_name else _('자료 PDF 붙이기') }}</button>
+      {% else %}
+      <a class="btn btn-ghost btn-sm is-locked" href="{{ url_for('pricing') }}" title="{{ _('스튜던트 플랜부터') }}">🔒 {{ _('자료 PDF') }}</a>
+      {% endif %}
       <button type="button" class="btn btn-ghost btn-sm" id="export">{{ _('내보내기') }}</button>
       <button type="button" class="btn btn-primary" id="make-summary">{{ _('요약 만들기') }}</button>
     </div>
@@ -110,6 +116,9 @@
       <section class="card card-pad">
         <div class="transcript-head">
           <p class="section-label" style="margin:0;">{{ _('스크립트') }}</p>
+          {% if not feat.translation %}
+          <a class="translate-pick is-locked" href="{{ url_for('pricing') }}" title="{{ _('스튜던트 플랜부터') }}">🔒 {{ _('번역') }}</a>
+          {% else %}
           <label class="translate-pick" title="{{ _('각 문장 아래에 번역을 한 줄씩 붙입니다') }}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 5h9M8 3v2M6 9c1 3 3 6 6 8M11 9c-1 3-3 6-6 8M14 19l3-8 3 8M15.5 16h3"/></svg>
             <select id="translate-select" aria-label="{{ _('번역') }}">
@@ -117,6 +126,7 @@
               {% for code, name in languages.items() %}<option value="{{ code }}">{{ name }}</option>{% endfor %}
             </select>
           </label>
+          {% endif %}
         </div>
         <div class="player" id="player" hidden>
           <button type="button" class="player-btn" id="player-toggle" aria-label="{{ _('재생/일시정지') }}">
@@ -128,7 +138,11 @@
           <span class="player-time" id="player-total">0:00</span>
           <audio id="audio" preload="none"></audio>
         </div>
+        {% if feat.replay %}
         <p class="hint" id="replay-hint" style="margin:0 0 10px;" {% if not segments or not segments[0].audio_path %}hidden{% endif %}>{{ _('문장을 누르면 그 부분부터 다시 들을 수 있습니다.') }}</p>
+        {% else %}
+        <p class="hint" style="margin:0 0 10px;">🔒 {{ _('녹음 보관과 문장 눌러 다시 듣기는 스튜던트 플랜부터입니다.') }} <a href="{{ url_for('pricing') }}">{{ _('플랜 보기') }}</a></p>
+        {% endif %}
         <div class="transcript" id="transcript">
           {% for seg in segments %}
           <div class="seg-line {{ 'has-speaker' if seg.speaker }} {{ 'has-audio' if seg.audio_path }}" data-id="{{ seg.id }}"
@@ -153,10 +167,36 @@
             <button type="button" class="seg-btn" role="tab" data-tab="notes" aria-pressed="true">{{ _('전체 노트') }}</button>
             <button type="button" class="seg-btn" role="tab" data-tab="exam" aria-pressed="false" id="exam-tab" {% if session.kind != 'lecture' %}hidden{% endif %}>{{ _('시험 요약') }}</button>
           </div>
-          <span class="hint" id="notes-hint">{{ _('빠짐없이 적은 노트') }}</span>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <span class="hint" id="notes-hint">{{ _('빠짐없이 적은 노트') }}</span>
+            {% if feat.notes_lang %}
+            <label class="translate-pick" title="{{ _('노트를 쓸 언어. 기본은 강의 언어입니다. 바꾼 뒤 요약을 다시 만드세요.') }}">
+              <select id="notes-lang" aria-label="{{ _('노트 언어') }}">
+                <option value="">{{ _('노트 언어: 강의 언어') }}</option>
+                {% for code, name in languages.items() %}<option value="{{ code }}" {{ 'selected' if session.notes_lang == code }}>{{ name }}</option>{% endfor %}
+              </select>
+            </label>
+            {% endif %}
+            {% if feat.edit_notes %}
+            <button type="button" class="btn btn-ghost btn-sm" id="edit-notes">{{ _('수정') }}</button>
+            {% else %}
+            <a class="btn btn-ghost btn-sm is-locked" href="{{ url_for('pricing') }}" title="{{ _('스튜던트 플랜부터') }}">🔒 {{ _('수정') }}</a>
+            {% endif %}
+          </div>
         </div>
         <div class="summary-body" id="summary-body">{{ session.summary or '' }}</div>
         <div class="summary-body" id="exam-body" hidden>{{ session.exam_sheet or '' }}</div>
+        <div id="notes-editor" hidden>
+          <textarea class="input notes-textarea" id="notes-textarea" spellcheck="false"></textarea>
+          <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px;">
+            <button type="button" class="btn btn-ghost btn-sm" id="edit-cancel">{{ _('취소') }}</button>
+            <button type="button" class="btn btn-primary btn-sm" id="edit-save">{{ _('저장') }}</button>
+          </div>
+          <p class="hint" style="margin-top:8px;">{{ _('마크다운으로 저장됩니다. 요약을 다시 만들면 수정한 내용은 덮어써집니다.') }}</p>
+        </div>
+        {% if not feat.exam_sheet %}
+        <p class="hint" style="margin-top:12px;">🔒 {{ _('시험 요약 한 장과 빠짐없이 적는 프리미엄 노트는 스튜던트 플랜부터입니다.') }} <a href="{{ url_for('pricing') }}">{{ _('플랜 보기') }}</a></p>
+        {% endif %}
         <div style="margin-top:22px;">
           <p class="section-label">{{ _('핵심 용어') }}</p>
           <div class="keywords" id="keywords">
@@ -172,7 +212,7 @@
         <img class="spot-sm" src="{{ url_for('static', filename=art ~ 'owl-bubble.png') }}" alt="" width="480" height="480">
         <p class="section-label" style="margin:0;">{{ _('AI 챗') }}</p>
       </div>
-      <p class="hint" style="margin-bottom:14px;">{{ _('오늘 기록한 내용 안에서만 답합니다. 나오지 않은 내용은 모른다고 말합니다.') }}</p>
+      <p class="hint" style="margin-bottom:14px;">{{ _('오늘 기록한 내용 안에서만 답합니다. 나오지 않은 내용은 모른다고 말합니다.') }}{% if session.attachment_name and feat.slides %} {{ _('붙인 자료 PDF도 함께 읽습니다.') }}{% endif %}</p>
       <div class="chat">
         <div class="chat-log" id="chat-log">
           {% for m in messages %}
@@ -191,7 +231,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>window.KEYWORD_NOTES = {{ keyword_notes | tojson }};</script>
+<script>window.KEYWORD_NOTES = {{ keyword_notes | tojson }}; window.RAW_NOTES = {{ (session.summary or '') | tojson }}; window.RAW_EXAM = {{ (session.exam_sheet or '') | tojson }};</script>
 <script src="{{ url_for('static', filename='js/capture.js') }}"></script>
 <script src="{{ url_for('static', filename='js/session.js') }}"></script>
 {% endblock %}

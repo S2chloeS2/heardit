@@ -102,7 +102,7 @@ document.getElementById('folder-new').addEventListener('click', async () => {
   try {
     const data = await api('/api/folders', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: name.trim() }) });
     window.location.href = `/review?folder=${data.id}`;
-  } catch (err) { toast(err.message, 'bad'); }
+  } catch (err) { toast(err.message, 'bad'); if (err.upgrade) setTimeout(() => { window.location.href = err.upgrade; }, 1200); }
 });
 document.querySelectorAll('.folder-assign').forEach(sel => {
   sel.addEventListener('change', async () => {

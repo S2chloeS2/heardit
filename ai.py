@@ -98,10 +98,10 @@ def _language_rule(lang):
     Korean; naming the target language is unambiguous.
     """
     if lang:
-        return (f"LANGUAGE: write every word of your output in {language_name(lang)}. "
-                f"The transcript is in {language_name(lang)}; match it exactly. "
-                "Technical terms may stay as spoken. These instructions are in "
-                "English, which must not influence your output language.")
+        return (f"LANGUAGE: write every word of your output in {language_name(lang)}, "
+                "whatever language the transcript is in. Technical terms may stay "
+                "as spoken. These instructions are in English, which must not "
+                "influence your output language.")
     return ("LANGUAGE: write every word of your output in the language the "
             "transcript is spoken in. These instructions are in English, which "
             "must not influence your output language.")
@@ -233,7 +233,7 @@ def _length_rule(transcript_chars):
             "left material out; when unsure, include the detail.")
 
 
-def _expand_notes(notes, transcript, shape, system, target):
+def _expand_notes(notes, transcript, shape, system, target, model=None):
     """Second pass when the first came back thin: add what was left out."""
     return _strip_fences(_chat(
         [
@@ -251,7 +251,7 @@ def _expand_notes(notes, transcript, shape, system, target):
                 ),
             },
         ],
-        model=SUMMARY_MODEL,
+        model=model or SUMMARY_MODEL,
         max_tokens=12000,
     ))
 
@@ -281,7 +281,7 @@ def _split_transcript(text, size=CHUNK_CHARS):
     return parts
 
 
-def _notes_for_chunk(chunk, index, total, kind, lang):
+def _notes_for_chunk(chunk, index, total, kind, lang, model=None):
     """Detailed notes for one slice of a long transcript."""
     shape = LECTURE_SHAPE if kind == "lecture" else MEETING_SHAPE
     system = SUMMARY_SYSTEM.format(language=_language_rule(lang))
@@ -297,12 +297,12 @@ def _notes_for_chunk(chunk, index, total, kind, lang):
                 ),
             },
         ],
-        model=SUMMARY_MODEL,
+        model=model or SUMMARY_MODEL,
         max_tokens=8000,
     ))
     target = _target_length(len(chunk))
     if len(notes) < target * EXPAND_BELOW:
-        notes = _expand_notes(notes, chunk, shape, system, target)
+        notes = _expand_notes(notes, chunk, shape, system, target, model=model)
     return notes
 
 
@@ -341,7 +341,7 @@ SLIDES_RULE = (
 )
 
 
-def summarize(transcript, kind="lecture", lang=None, slides=None):
+def summarize(transcript, kind="lecture", lang=None, slides=None, model=None, premium=True):
     """Return {title, summary (markdown), keywords: [...], language} for a transcript.
 
     Short recordings go to the model in one pass. Long ones are summarised
@@ -350,14 +350,16 @@ def summarize(transcript, kind="lecture", lang=None, slides=None):
     as plain markdown (long JSON strings truncate and mis-escape); a second,
     cheap call names the session and picks the keywords.
     """
-    lang = lang or detect_language(transcript)
+    detected = detect_language(transcript)
+    lang = lang or detected
+    model = model or (SUMMARY_MODEL if premium else CHAT_MODEL)
     shape = LECTURE_SHAPE if kind == "lecture" else MEETING_SHAPE
     chunks = _split_transcript(transcript)
     system = SUMMARY_SYSTEM.format(language=_language_rule(lang))
 
     if len(chunks) > 1:
         partials = [
-            _notes_for_chunk(chunk, i, len(chunks), kind, lang)
+            _notes_for_chunk(chunk, i, len(chunks), kind, lang, model=model)
             for i, chunk in enumerate(chunks, start=1)
         ]
         source = "\n\n---\n\n".join(
@@ -382,13 +384,13 @@ def summarize(transcript, kind="lecture", lang=None, slides=None):
 
     notes = _strip_fences(_chat(
         [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
-        model=SUMMARY_MODEL,
+        model=model,
         max_tokens=12000,
     ))
-    if len(chunks) == 1:
+    if len(chunks) == 1 and premium:
         target = _target_length(len(transcript))
         if len(notes) < target * EXPAND_BELOW:
-            notes = _expand_notes(notes, transcript, shape, system, target)
+            notes = _expand_notes(notes, transcript, shape, system, target, model=model)
     notes, trailing = _split_keyword_section(notes)
 
     title, keywords = _title_and_keywords(notes, transcript, lang)
@@ -396,7 +398,7 @@ def summarize(transcript, kind="lecture", lang=None, slides=None):
         "title": title or "Untitled session",
         "summary": notes,
         "keywords": keywords or _as_keywords(trailing),
-        "language": lang,
+        "language": detected,
     }
 
 
@@ -566,13 +568,17 @@ CHAT_SYSTEM = (
 )
 
 
-def answer(question, transcript, history=None, lang=None):
-    if not transcript.strip():
+def answer(question, transcript, history=None, lang=None, slides=None):
+    if not transcript.strip() and not slides:
         return "There is no transcript for this session yet, so there is nothing to answer from."
 
-    rule = (f"Answer in {language_name(lang)}, the transcript's language."
+    rule = (f"Answer in {language_name(lang)}."
             if lang else "Answer in the language the transcript is spoken in.")
-    messages = [{"role": "system", "content": CHAT_SYSTEM.format(transcript=transcript, language=rule)}]
+    source = transcript
+    if slides:
+        source = (f"{transcript}\n\n--- SLIDES (the lecture's own material; treat as part of "
+                  f"the session and say 'the slides' when citing them) ---\n{slides[:40_000]}")
+    messages = [{"role": "system", "content": CHAT_SYSTEM.format(transcript=source, language=rule)}]
     for turn in (history or [])[-10:]:
         messages.append({"role": turn["role"], "content": turn["content"]})
     messages.append({"role": "user", "content": question})

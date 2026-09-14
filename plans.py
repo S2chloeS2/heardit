@@ -19,7 +19,9 @@ from datetime import datetime, timezone
 
 import db
 
-COST_PER_HOUR = 1000  # KRW, conservative
+# Measured: AssemblyAI ~210, gpt-4o notes with the expansion pass and exam
+# sheet ~350, chat/keywords ~50, translation ~10. Rounded up.
+COST_PER_HOUR = 750  # KRW
 
 PLANS = {
     "free": {
@@ -27,24 +29,25 @@ PLANS = {
         "minutes": 2 * 60,
         "price": 0,
         "blurb": "써보기",
-        "features": ["모든 입력 방식", "시험 노트 · 핵심 용어 · AI 챗", "문장 눌러 다시 듣기",
+        "features": ["실시간 받아쓰기 · 링크 · 파일", "기본 노트 · 핵심 용어 · AI 챗",
                      "기록 30일 보관"],
     },
     "student": {
         "name": "스튜던트",
-        "minutes": 20 * 60,
-        "price": 12900,
+        "minutes": 15 * 60,
+        "price": 14900,
         "blurb": "매일 수업 듣는 학생",
-        "features": ["무료의 모든 기능", "기록 무제한 보관", "폴더로 묶어 한꺼번에 질문",
-                     "강의 자료 PDF 나란히 보기", "실시간 번역"],
+        "features": ["프리미엄 노트 (빠짐없이) + 시험 요약", "노트 직접 수정",
+                     "녹음 보관 · 문장 눌러 다시 듣기", "강의 자료 PDF 나란히 보기 · PDF 기반 챗",
+                     "실시간 번역 · 노트 언어 선택", "폴더로 묶어 한꺼번에 질문", "기록 무제한 보관"],
     },
     "pro": {
         "name": "프로",
-        "minutes": 45 * 60,
-        "price": 24900,
+        "minutes": 30 * 60,
+        "price": 29900,
         "blurb": "회의가 잦은 팀과 연구자",
         "features": ["스튜던트의 모든 기능", "회의 화자 분리", "긴 파일 우선 처리",
-                     "추가 크레딧 20% 할인"],
+                     "추가 크레딧 10% 할인"],
     },
 }
 
@@ -56,6 +59,47 @@ TOPUPS = {
     "topup15": {"name": "15시간 크레딧", "minutes": 15 * 60, "price": 14900},
 }
 
+# What each tier unlocks. Checked server-side in the routes, not just hidden
+# in the UI. The free tier is the honest trial: live transcription, notes
+# from the cheaper model, chat. Everything that costs more or keeps data
+# longer is paid.
+FEATURES = {
+    "free":    {"premium_notes": False, "exam_sheet": False, "edit_notes": False,
+                "replay": False, "slides": False, "translation": False,
+                "folders": False, "notes_lang": False, "diarization": False,
+                "retention_days": 30},
+    "student": {"premium_notes": True, "exam_sheet": True, "edit_notes": True,
+                "replay": True, "slides": True, "translation": True,
+                "folders": True, "notes_lang": True, "diarization": False,
+                "retention_days": None},
+    "pro":     {"premium_notes": True, "exam_sheet": True, "edit_notes": True,
+                "replay": True, "slides": True, "translation": True,
+                "folders": True, "notes_lang": True, "diarization": True,
+                "retention_days": None},
+}
+
+# Rows of the comparison table on /pricing: (label, feature key or text per plan)
+COMPARISON = [
+    ("월 받아쓰기 시간", {"free": "2시간", "student": "15시간", "pro": "30시간"}),
+    ("실시간 받아쓰기 · 링크 · 파일 업로드", {"free": True, "student": True, "pro": True}),
+    ("핵심 용어 설명 · 기록 안에서만 답하는 AI 챗", {"free": True, "student": True, "pro": True}),
+    ("노트", {"free": "기본", "student": "프리미엄 (빠짐없이)", "pro": "프리미엄 (빠짐없이)"}),
+    ("시험 요약 한 장", "exam_sheet"),
+    ("노트 직접 수정", "edit_notes"),
+    ("녹음 보관 · 문장 눌러 다시 듣기", "replay"),
+    ("강의 자료 PDF 나란히 보기 · PDF까지 읽는 챗", "slides"),
+    ("실시간 번역 (16개 언어)", "translation"),
+    ("노트 언어 선택", "notes_lang"),
+    ("폴더 · 과목 단위 질문", "folders"),
+    ("회의 화자 분리", "diarization"),
+    ("기록 보관", {"free": "30일", "student": "무제한", "pro": "무제한"}),
+    ("추가 크레딧 할인", {"free": "–", "student": "–", "pro": "10%"}),
+]
+
+# Accounts that always have Pro: the owner and anyone listed. No payment,
+# no expiry, no code needed.
+OWNER_EMAILS = {e.strip().lower() for e in os.getenv("OWNER_EMAILS", "").split(",") if e.strip()}
+
 # Legacy plan keys from before the tiers were renamed.
 _ALIASES = {"standard": "student"}
 
@@ -66,6 +110,8 @@ PROMO_FLOOR = 0.55
 
 
 def plan_key(user):
+    if ((user or {}).get("email") or "").lower() in OWNER_EMAILS:
+        return "pro"
     key = (user or {}).get("plan") or "free"
     key = _ALIASES.get(key, key)
     if key not in PLANS:
@@ -79,6 +125,18 @@ def plan_key(user):
 
 def plan_of(user):
     return {"key": plan_key(user), **PLANS[plan_key(user)]}
+
+
+def features(user):
+    return FEATURES[plan_key(user)]
+
+
+def can(user, feature):
+    return bool(features(user).get(feature))
+
+
+def is_owner(user):
+    return ((user or {}).get("email") or "").lower() in OWNER_EMAILS
 
 
 def _now_iso():

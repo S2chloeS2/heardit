@@ -95,7 +95,7 @@ if (startBtn) {
 function appendSegment(text, id, audio) {
   if (transcriptEmpty) transcriptEmpty.remove();
   const line = document.createElement('div');
-  line.className = 'seg-line is-new' + (audio ? ' has-audio' : '');
+  line.className = 'seg-line is-new' + (audio && root.dataset.replay ? ' has-audio' : '');
   if (id) line.dataset.id = id;
   if (audio) {
     line.dataset.audio = audio;
@@ -131,7 +131,7 @@ function fmtTime(sec) {
 
 function playLine(line) {
   const src = line.dataset.audio;
-  if (!src) return;
+  if (!src || !root.dataset.replay) return;
   const offset = Number(line.dataset.offset || 0) / 1000;
   player.hidden = false;
   if (playingLine) playingLine.classList.remove('is-playing');
@@ -334,12 +334,12 @@ if (examBody.textContent.trim()) {
 } else {
   examTab.hidden = true;
 }
-function showTab(which) {
+let showTab = function (which) {
   document.querySelectorAll('#notes-tabs .seg-btn').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tab === which)));
   summaryBody.hidden = which !== 'notes';
   examBody.hidden = which !== 'exam';
   notesHint.textContent = which === 'exam' ? T.examHint : T.notesHint;
-}
+};
 document.getElementById('notes-tabs').addEventListener('click', (e) => {
   const b = e.target.closest('.seg-btn');
   if (b) showTab(b.dataset.tab);
@@ -353,6 +353,7 @@ summaryBtn.addEventListener('click', async () => {
     const data = await api(`/api/sessions/${sessionId}/summary`, { method: 'POST' });
     summaryBody.innerHTML = renderMarkdown(data.summary);
     examBody.innerHTML = renderMarkdown(data.exam_sheet || '');
+    rawNotes = { notes: data.summary || '', exam: data.exam_sheet || '' };
     examTab.hidden = !data.exam_sheet;
     showTab('notes');
     summaryCard.style.display = '';
@@ -412,6 +413,51 @@ keywordsEl.addEventListener('click', async (event) => {
   } catch (err) {
     kwPanel.textContent = err.message;
   }
+});
+
+// -------------------------------------------------------------- notes editor
+
+// The notes are the user's: the active tab opens as markdown, and saving
+// replaces just that field. Regenerating later overwrites it, and says so.
+const editBtn = document.getElementById('edit-notes');
+const editor = document.getElementById('notes-editor');
+const textarea = document.getElementById('notes-textarea');
+let rawNotes = { notes: window.RAW_NOTES || '', exam: window.RAW_EXAM || '' };
+let activeTab = 'notes';
+const _showTab = showTab;
+showTab = function (which) { activeTab = which; editor.hidden = true; summaryBody.hidden = false; _showTab(which); };
+
+if (editBtn) {
+  editBtn.addEventListener('click', () => {
+    textarea.value = rawNotes[activeTab] || '';
+    summaryBody.hidden = true;
+    examBody.hidden = true;
+    editor.hidden = false;
+    textarea.style.height = Math.min(600, Math.max(240, textarea.scrollHeight)) + 'px';
+    textarea.focus();
+  });
+  document.getElementById('edit-cancel').addEventListener('click', () => showTab(activeTab));
+  document.getElementById('edit-save').addEventListener('click', async () => {
+    const value = textarea.value;
+    const field = activeTab === 'exam' ? 'exam_sheet' : 'summary';
+    try {
+      await api(`/api/sessions/${sessionId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value }) });
+      rawNotes[activeTab] = value;
+      (activeTab === 'exam' ? examBody : summaryBody).innerHTML = renderMarkdown(value);
+      showTab(activeTab);
+      toast(T.saved, 'ok');
+    } catch (err) { toast(err.message, 'bad'); }
+  });
+}
+
+const notesLang = document.getElementById('notes-lang');
+if (notesLang) notesLang.addEventListener('change', async () => {
+  try {
+    await api(`/api/sessions/${sessionId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes_lang: notesLang.value }) });
+    toast(T.notesLangSaved, 'ok');
+  } catch (err) { toast(err.message, 'bad'); }
 });
 
 // ---------------------------------------------------------------------- chat
@@ -547,13 +593,13 @@ function closeSlides() {
   slidesPanel.hidden = true;
   grid.classList.remove('has-slides');
 }
-slidesBtn.addEventListener('click', () => {
+if (slidesBtn) slidesBtn.addEventListener('click', () => {
   if (slidesBtn.dataset.has) { slidesPanel.hidden ? openSlides() : closeSlides(); }
   else slidesFile.click();
 });
-document.getElementById('slides-replace').addEventListener('click', () => slidesFile.click());
-document.getElementById('slides-close').addEventListener('click', closeSlides);
-slidesFile.addEventListener('change', async () => {
+if (slidesBtn) document.getElementById('slides-replace').addEventListener('click', () => slidesFile.click());
+if (slidesBtn) document.getElementById('slides-close').addEventListener('click', closeSlides);
+if (slidesBtn) slidesFile.addEventListener('change', async () => {
   const file = slidesFile.files[0];
   if (!file) return;
   const form = new FormData();
@@ -576,7 +622,7 @@ slidesFile.addEventListener('change', async () => {
     slidesFile.value = '';
   }
 });
-document.getElementById('slides-remove').addEventListener('click', async () => {
+if (slidesBtn) document.getElementById('slides-remove').addEventListener('click', async () => {
   if (!confirm(T.slidesRemoveConfirm)) return;
   try {
     await api(`/api/sessions/${sessionId}/attachment`, { method: 'DELETE' });

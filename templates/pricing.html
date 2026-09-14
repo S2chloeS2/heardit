@@ -12,6 +12,26 @@
     </div>
     {% with mode=('buy' if current_user else 'landing') %}{% include "_plan_cards.html" %}{% endwith %}
 
+    <div style="overflow-x:auto;">
+    <table class="compare">
+      <thead><tr><th>{{ _('기능') }}</th>{% for key in order %}<th class="{{ 'is-featured' if key == 'student' }}">{{ _(plans[key].name) }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for label, spec in comparison %}
+      <tr><td>{{ _(label) }}</td>
+        {% for key in order %}
+        {% if spec is string %}
+          <td>{% if features[key][spec] %}<span class="yes">✓</span>{% else %}<span class="no">–</span>{% endif %}</td>
+        {% else %}
+          {% set v = spec[key] %}
+          <td>{% if v is sameas true %}<span class="yes">✓</span>{% elif v is sameas false %}<span class="no">–</span>{% else %}{{ _(v) }}{% endif %}</td>
+        {% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+
     <div class="lp-compare">
       <h3>{{ _('다른 받아쓰기 앱과 무엇이 다른가') }}</h3>
       <ul>

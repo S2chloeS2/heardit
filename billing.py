@@ -58,11 +58,45 @@ def item(key):
 
 
 def topup_price(key, user):
-    """Pro subscribers get 20% off credit packs."""
+    """Pro subscribers get 10% off credit packs."""
     price = plans.TOPUPS[key]["price"]
     if plans.plan_key(user) == "pro":
-        price = price * 80 // 100
+        price = price * 90 // 100
     return price
+
+
+def seed_promos():
+    """Create codes listed in PROMO_SEED that do not exist yet.
+
+    Lets a hosted deploy without a shell (Render's free tier) still have the
+    owner's code and a launch discount. Format, comma-separated:
+      CODE:percent:20:200      (20% off, 200 uses)
+      CODE:fixed:3000:50       (3,000 KRW off, 50 uses)
+      CODE:comp:pro:120:3      (free Pro for 120 months, 3 uses)
+    """
+    spec = os.getenv("PROMO_SEED", "").strip()
+    if not spec:
+        return []
+    made = []
+    for entry in spec.split(","):
+        parts = [p.strip() for p in entry.split(":") if p.strip()]
+        if len(parts) < 3 or db.get_promo(parts[0]):
+            continue
+        code, kind = parts[0], parts[1]
+        try:
+            if kind == "percent":
+                db.add_promo(code, "percent", value=int(parts[2]), max_uses=int(parts[3]) if len(parts) > 3 else None, note="seed")
+            elif kind == "fixed":
+                db.add_promo(code, "fixed", value=int(parts[2]), max_uses=int(parts[3]) if len(parts) > 3 else None, note="seed")
+            elif kind == "comp":
+                db.add_promo(code, "comp", plan=parts[2], months=int(parts[3]) if len(parts) > 3 else 12,
+                             max_uses=int(parts[4]) if len(parts) > 4 else 1, note="seed")
+            else:
+                continue
+            made.append(code.upper())
+        except Exception:
+            continue
+    return made
 
 
 # ----------------------------------------------------------- promo codes

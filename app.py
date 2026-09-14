@@ -55,6 +55,9 @@ os.makedirs(AUDIO_DIR, exist_ok=True)
 
 db.init()
 auth.init_app(app)
+_seeded = billing.seed_promos()
+if _seeded:
+    app.logger.info("seeded promo codes: %s", ", ".join(_seeded))
 i18n.init_app(app)
 
 
@@ -183,6 +186,15 @@ def drop_audio(session_id):
     shutil.rmtree(os.path.join(AUDIO_DIR, str(session_id)), ignore_errors=True)
 
 
+def require(feature):
+    """403 with an upgrade hint when the user's plan lacks `feature`."""
+    user = auth.current_user()
+    if plans.can(user, feature):
+        return None
+    return jsonify({"error": i18n._("이 기능은 스튜던트 플랜부터 쓸 수 있습니다."),
+                    "upgrade": url_for("pricing")}), 403
+
+
 def session_language(session):
     """The transcript's language code, detecting and caching it on first use."""
     lang = session.get("language")
@@ -230,6 +242,7 @@ def session_view(session_id):
         folders=current_folders(),
         engines=engines.available(),
         languages=ai.LANGUAGE_NAMES,
+        feat=plans.features(auth.current_user()),
     )
 
 
@@ -280,6 +293,7 @@ def account():
         payments_open=billing.stripe_ready() or auth.dev_login_allowed(),
         simulated=not billing.stripe_ready() and auth.dev_login_allowed(),
         has_portal=billing.stripe_ready() and bool(user.get("stripe_customer_id")),
+        owner=plans.is_owner(user),
     )
 
 
@@ -288,6 +302,7 @@ def pricing():
     user = auth.current_user()
     return render_template(
         "pricing.html", plans=plans.PLANS, order=plans.ORDER, topups=plans.TOPUPS,
+        comparison=plans.COMPARISON, features=plans.FEATURES,
         current=plans.plan_key(user) if user else None,
         payments_open=billing.stripe_ready() or auth.dev_login_allowed(),
     )
@@ -332,7 +347,20 @@ def api_modify_session(session_id):
         return jsonify({"ok": True})
 
     body = request.get_json(silent=True) or {}
-    fields = {k: v for k, v in body.items() if k in {"title", "summary", "keywords", "kind"}}
+    fields = {k: v for k, v in body.items() if k in {"title", "keywords", "kind"}}
+
+    # Editing the notes by hand, and choosing their language, are paid features.
+    if "summary" in body or "exam_sheet" in body:
+        if (denied := require("edit_notes")):
+            return denied
+        for key in ("summary", "exam_sheet"):
+            if key in body:
+                fields[key] = (body[key] or "")[:200_000]
+    if "notes_lang" in body:
+        if (denied := require("notes_lang")):
+            return denied
+        code = (body["notes_lang"] or "").lower()[:2]
+        fields["notes_lang"] = code if code in ai.LANGUAGE_NAMES else None
 
     # Filing into a folder: only into one of the caller's own, or out of any.
     if "folder_id" in body:
@@ -353,6 +381,8 @@ def api_modify_session(session_id):
 @app.route("/api/folders", methods=["POST"])
 @auth.login_required
 def api_create_folder():
+    if (denied := require("folders")):
+        return denied
     name = ((request.get_json(silent=True) or {}).get("name") or "").strip()[:80]
     if not name:
         return fail(i18n._("폴더 이름을 입력해주세요."))
@@ -669,7 +699,8 @@ def _run_pipeline(session_id, path, workdir):
         plans.record_usage(session.get("user_id"), session_id, media.duration_of(path))
         # Meetings want to know who spoke; lectures are one voice, so we skip
         # diarization there and use the cheaper engine.
-        diarize = kind == "meeting"
+        owner_user = db.get_user(session.get("user_id"))
+        diarize = kind == "meeting" and plans.can(owner_user, "diarization")
         offset_ms = 0
         # The whole recording stays on disk so any line can be replayed.
         audio_name = keep_audio(session_id, path, "full" + os.path.splitext(path)[1])
@@ -732,14 +763,21 @@ def _build_summary(session_id):
         raise ValueError("There is nothing transcribed in this session yet.")
 
     kind = session.get("kind", "lecture")
-    lang = session_language(session)
-    result = ai.summarize(transcript, kind=kind, lang=lang, slides=session.get("attachment_text"))
-    fields = {"summary": result["summary"], "keywords": result["keywords"]}
-    try:
-        fields["exam_sheet"] = ai.exam_sheet(result["summary"], kind=kind, lang=lang)
-    except Exception:
-        # The notes are the product; a failed cram sheet must not lose them.
-        app.logger.error("exam sheet failed: %s", traceback.format_exc())
+    user = db.get_user(session.get("user_id"))
+    feat = plans.features(user)
+    lang = session.get("notes_lang") if feat["notes_lang"] and session.get("notes_lang") else session_language(session)
+    result = ai.summarize(
+        transcript, kind=kind, lang=lang,
+        slides=session.get("attachment_text") if feat["slides"] else None,
+        premium=feat["premium_notes"],
+    )
+    fields = {"summary": result["summary"], "keywords": result["keywords"], "exam_sheet": None}
+    if feat["exam_sheet"]:
+        try:
+            fields["exam_sheet"] = ai.exam_sheet(result["summary"], kind=kind, lang=lang)
+        except Exception:
+            # The notes are the product; a failed cram sheet must not lose them.
+            app.logger.error("exam sheet failed: %s", traceback.format_exc())
     if result.get("language") and not session.get("language"):
         fields["language"] = result["language"]
     # Only adopt the generated title if the user has not set one of their own.
@@ -812,10 +850,12 @@ def api_chat(session_id):
         return fail(i18n._("Type a question first."))
 
     transcript = db.get_transcript(session_id)
+    session = db.get_session(session_id)
     try:
         reply = ai.answer(
             question, transcript, history=db.get_messages(session_id),
-            lang=session_language(db.get_session(session_id)),
+            lang=session_language(session),
+            slides=session.get("attachment_text") if plans.can(auth.current_user(), "slides") else None,
         )
     except Exception as exc:
         app.logger.error("chat failed: %s", traceback.format_exc())
@@ -883,6 +923,8 @@ def api_attachment(session_id):
     the notes when they are generated."""
     if not owned(session_id):
         return fail(i18n._("No such session."), 404)
+    if (denied := require("slides")):
+        return denied
     path = os.path.join(session_audio_dir(session_id), "slides.pdf")
 
     if request.method == "DELETE":
@@ -916,6 +958,8 @@ def api_attachment(session_id):
 def api_attachment_file(session_id):
     if not owned(session_id):
         abort(404)
+    if not plans.can(auth.current_user(), "slides"):
+        abort(403)
     path = os.path.join(AUDIO_DIR, str(session_id), "slides.pdf")
     if not os.path.isfile(path):
         abort(404)
@@ -930,6 +974,8 @@ def api_audio(session_id, name):
     """Stream a kept recording. Range requests let the player seek."""
     if not owned(session_id):
         abort(404)
+    if not plans.can(auth.current_user(), "replay"):
+        abort(403)
     # Names are generated by us; anything with a separator is not ours.
     if "/" in name or "\\" in name or name.startswith("."):
         abort(404)
@@ -945,6 +991,8 @@ def api_translate(session_id):
     """Translate transcript lines into a target language, caching per line."""
     if not owned(session_id):
         return fail(i18n._("No such session."), 404)
+    if (denied := require("translation")):
+        return denied
     body = request.get_json(silent=True) or {}
     target = (body.get("target") or "").lower()[:2]
     if target not in ai.LANGUAGE_NAMES:
@@ -967,6 +1015,29 @@ def api_translate(session_id):
         db.save_translations(session_id, target, fresh)
         result.update(fresh)
     return jsonify({"translations": {str(k): v for k, v in result.items()}})
+
+
+# --------------------------------------------------------------- retention
+
+def _retention_sweep():
+    """Delete free-tier notes older than their retention window, daily."""
+    days = plans.FEATURES["free"]["retention_days"]
+    while days:
+        try:
+            for row in db.expired_sessions(days, exempt_emails=plans.OWNER_EMAILS):
+                # A lapsed paid plan is still 'student' in the row; only true
+                # free accounts are swept.
+                if plans.plan_key(row) != "free":
+                    continue
+                db.delete_session(row["id"])
+                drop_audio(row["id"])
+        except Exception:
+            app.logger.error("retention sweep failed: %s", traceback.format_exc())
+        time.sleep(24 * 3600)
+
+
+if os.getenv("RETENTION_SWEEP", "1") == "1":
+    threading.Thread(target=_retention_sweep, daemon=True).start()
 
 
 @app.route("/privacy")

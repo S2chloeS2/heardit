@@ -166,6 +166,7 @@ def init():
 
         for column, decl in (
             ("exam_sheet", "TEXT"),
+            ("notes_lang", "TEXT"),        # override for the notes' language
             ("attachment_name", "TEXT"),   # original file name of the slides PDF
             ("attachment_text", "TEXT"),   # extracted text, capped, for the notes
         ):
@@ -254,7 +255,7 @@ def list_sessions(user_id, folder_id=None):
 
 def update_session(session_id, **fields):
     allowed = {"title", "kind", "summary", "keywords", "source_url", "folder_id", "language",
-               "exam_sheet", "attachment_name", "attachment_text"}
+               "exam_sheet", "attachment_name", "attachment_text", "notes_lang"}
     sets, values = [], []
     for key, value in fields.items():
         if key not in allowed:
@@ -274,6 +275,21 @@ def update_session(session_id, **fields):
 def delete_session(session_id):
     with connect() as conn:
         conn.execute("DELETE FROM sessions WHERE id=?", (session_id,))
+
+
+def expired_sessions(days, plan_keys=("free",), exempt_emails=()):
+    """Sessions older than `days` belonging to users on the given plans."""
+    from datetime import datetime, timedelta, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+    marks = ",".join("?" * len(plan_keys))
+    with connect() as conn:
+        rows = conn.execute(
+            f"SELECT s.id, s.user_id, u.email, u.plan, u.plan_until FROM sessions s"
+            f" JOIN users u ON u.id = s.user_id"
+            f" WHERE s.created_at < ? AND COALESCE(u.plan, 'free') IN ({marks})",
+            (cutoff, *plan_keys),
+        ).fetchall()
+        return [dict(r) for r in rows if (r["email"] or "").lower() not in exempt_emails]
 
 
 # ---------------------------------------------------------------- segments
