@@ -525,4 +525,24 @@ TRANSLATIONS = {
     '핵심 용어 설명 · 기록 안에서만 답하는 AI 챗': 'Key-term explanations · AI chat grounded in the note',
     '이 기능은 스튜던트 플랜부터 쓸 수 있습니다.': 'This feature starts with the Student plan.',
 
+    # Contact / inbox
+    '문의': 'Contact',
+    '문의하기': 'Contact us',
+    '결제, 오류, 기능 제안 무엇이든 남겨주세요. 답변은 계정 페이지의 "내 문의"에서 볼 수 있습니다.': 'Billing, bugs, feature ideas, anything. Replies appear under "My inquiries" on your account page.',
+    '받았습니다': 'Got it',
+    '보통 하루 안에 답합니다.': 'We usually reply within a day.',
+    '내 문의 보기': 'See my inquiries',
+    '이메일': 'Email',
+    '주제': 'Topic',
+    '내용': 'Message',
+    '오류': 'Bug',
+    '기능 제안': 'Feature idea',
+    '기타': 'Other',
+    '이메일과 내용을 채워주세요.': 'Please fill in your email and a message.',
+    '내 문의': 'My inquiries',
+    '답변 완료': 'Answered',
+    '종료': 'Closed',
+    '확인 중': 'Open',
+    '아직 문의가 없습니다.': 'No inquiries yet.',
+
 }

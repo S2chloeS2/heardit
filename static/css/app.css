@@ -944,3 +944,6 @@ html, body { overflow-x: clip; }
 .compare .no { color: var(--ink-mute); }
 .kw-panel-review { margin-top: 10px; }
 .kw-panel-review[hidden] { display: none; }
+.admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+.admin-table td, .admin-table th { font-size: 13px; }
+.admin-table .input { padding: 4px 8px; font-size: 12.5px; }

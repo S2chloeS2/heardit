@@ -68,6 +68,7 @@ def inject_user():
     return {
         "current_user": user,
         "allowance": plans.allowance(user["id"], user) if user else None,
+        "is_owner": plans.is_owner(user) if user else False,
     }
 
 
@@ -293,7 +294,7 @@ def account():
         payments_open=billing.stripe_ready() or auth.dev_login_allowed(),
         simulated=not billing.stripe_ready() and auth.dev_login_allowed(),
         has_portal=billing.stripe_ready() and bool(user.get("stripe_customer_id")),
-        owner=plans.is_owner(user),
+        owner=plans.is_owner(user), inquiries=db.user_inquiries(user["id"]),
     )
 
 
@@ -1038,6 +1039,114 @@ def _retention_sweep():
 
 if os.getenv("RETENTION_SWEEP", "1") == "1":
     threading.Thread(target=_retention_sweep, daemon=True).start()
+
+
+# ------------------------------------------------------------- contact
+
+INQUIRY_TOPICS = ("billing", "bug", "feature", "other")
+
+
+@app.route("/contact", methods=["GET", "POST"])
+def contact():
+    """Support inbox. Messages land in the database; the owner answers from
+    /admin and the reply shows on the sender's account page."""
+    user = auth.current_user()
+    if request.method == "POST":
+        email = (request.form.get("email") or (user or {}).get("email") or "").strip()[:200]
+        topic = request.form.get("topic") or "other"
+        message = (request.form.get("message") or "").strip()[:5000]
+        if "@" not in email or not message:
+            return render_template("contact.html", topics=INQUIRY_TOPICS, sent=False,
+                                   error=i18n._("이메일과 내용을 채워주세요."), form=request.form), 400
+        db.add_inquiry(email, topic if topic in INQUIRY_TOPICS else "other", message,
+                       name=(user or {}).get("name"), user_id=(user or {}).get("id"))
+        return render_template("contact.html", topics=INQUIRY_TOPICS, sent=True)
+    return render_template("contact.html", topics=INQUIRY_TOPICS, sent=False, form={})
+
+
+# --------------------------------------------------------------- admin
+
+@app.route("/admin")
+@auth.owner_required
+def admin():
+    since = plans.month_start()
+    tab = request.args.get("tab", "overview")
+    return render_template(
+        "admin.html", tab=tab, stats=db.admin_stats(since),
+        users=db.admin_users(request.args.get("q")) if tab == "users" else [],
+        orders=db.admin_orders() if tab == "orders" else [],
+        promos=db.list_promos() if tab == "promos" else [],
+        inquiries=db.list_inquiries(request.args.get("status") or None) if tab == "inquiries" else [],
+        plans=plans.PLANS, topups=plans.TOPUPS, budget=plans.budget_status(),
+        q=request.args.get("q", ""), status=request.args.get("status", ""),
+        stripe_ready=billing.stripe_ready(),
+    )
+
+
+@app.route("/api/admin/users/<int:user_id>", methods=["PATCH"])
+@auth.owner_required
+def api_admin_user(user_id):
+    """Set a plan (with optional expiry) or add credit by hand."""
+    body = request.get_json(silent=True) or {}
+    if not db.get_user(user_id):
+        return fail("No such user.", 404)
+    if "plan" in body:
+        if body["plan"] not in plans.PLANS:
+            return fail("Unknown plan.")
+        until = None
+        if body["plan"] != "free" and body.get("months"):
+            from datetime import datetime, timedelta, timezone
+            until = (datetime.now(timezone.utc) + timedelta(days=30 * int(body["months"]))).isoformat(timespec="seconds")
+        db.set_plan(user_id, body["plan"], until=until)
+        db.add_order(user_id, "comp", body["plan"], amount=0, provider="comp",
+                     provider_ref=f"admin:{user_id}:{int(time.time())}")
+    if body.get("credit_minutes"):
+        db.add_bonus_seconds(user_id, int(body["credit_minutes"]) * 60)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/promos", methods=["POST"])
+@auth.owner_required
+def api_admin_promo():
+    body = request.get_json(silent=True) or {}
+    code = (body.get("code") or "").strip().upper()
+    kind = body.get("kind")
+    if not code or kind not in ("percent", "fixed", "comp"):
+        return fail("Code and kind are required.")
+    if db.get_promo(code):
+        return fail("That code already exists.")
+    try:
+        db.add_promo(
+            code, kind, value=int(body.get("value") or 0),
+            plan=body.get("plan") if body.get("plan") in plans.PLANS else None,
+            months=int(body.get("months") or 1), max_uses=int(body["max_uses"]) if body.get("max_uses") else None,
+            expires_at=f"{body['expires']}T23:59:59+00:00" if body.get("expires") else None,
+            note=(body.get("note") or "")[:200],
+        )
+    except Exception as exc:
+        return fail(str(exc))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/promos/<code>", methods=["DELETE"])
+@auth.owner_required
+def api_admin_promo_delete(code):
+    db.delete_promo(code)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/inquiries/<int:inquiry_id>", methods=["PATCH"])
+@auth.owner_required
+def api_admin_inquiry(inquiry_id):
+    body = request.get_json(silent=True) or {}
+    status = body.get("status")
+    if status and status not in ("open", "answered", "closed"):
+        return fail("Bad status.")
+    reply = body.get("reply")
+    if reply is not None and not status:
+        status = "answered"
+    db.update_inquiry(inquiry_id, reply=reply, status=status)
+    return jsonify({"ok": True})
 
 
 @app.route("/privacy")

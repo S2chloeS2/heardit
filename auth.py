@@ -126,6 +126,26 @@ def current_user():
     return user
 
 
+def owner_required(view):
+    """Owner-only pages and APIs. Others get 404, so the admin surface is
+    not even confirmed to exist."""
+    import plans
+
+    @functools.wraps(view)
+    def wrapped(*args, **kwargs):
+        user = current_user()
+        if not user:
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "로그인이 필요합니다."}), 401
+            return redirect(url_for("auth.login", next=request.path))
+        if not plans.is_owner(user):
+            from flask import abort
+            abort(404)
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
 def login_required(view):
     """Guard a page. API routes get JSON, pages get redirected to sign-in."""
 

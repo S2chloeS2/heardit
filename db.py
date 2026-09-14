@@ -116,6 +116,18 @@ CREATE TABLE IF NOT EXISTS orders (
     status       TEXT    NOT NULL DEFAULT 'paid',
     created_at   TEXT    NOT NULL
 );
+CREATE TABLE IF NOT EXISTS inquiries (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    email      TEXT    NOT NULL,
+    name       TEXT,
+    topic      TEXT    NOT NULL,             -- 'billing' | 'bug' | 'feature' | 'other'
+    message    TEXT    NOT NULL,
+    reply      TEXT,
+    status     TEXT    NOT NULL DEFAULT 'open',  -- 'open' | 'answered' | 'closed'
+    created_at TEXT    NOT NULL,
+    updated_at TEXT    NOT NULL
+);
 CREATE TABLE IF NOT EXISTS usage_log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -132,6 +144,7 @@ INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_folder ON sessions(folder_id);
 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_inquiries_status ON inquiries(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_redemptions_user ON promo_redemptions(user_id);
 CREATE INDEX IF NOT EXISTS idx_segments_session ON segments(session_id);
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
@@ -776,3 +789,87 @@ def usage_seconds_all(since=None):
             (since,) if since else (),
         ).fetchone()
         return int(row["s"] or 0)
+
+
+# ------------------------------------------------------------ inquiries
+
+def add_inquiry(email, topic, message, name=None, user_id=None):
+    ts = now()
+    with connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO inquiries (user_id, email, name, topic, message, status, created_at, updated_at)"
+            " VALUES (?,?,?,?,?,'open',?,?)",
+            (user_id, email, name, topic, message, ts, ts),
+        )
+        return cur.lastrowid
+
+
+def list_inquiries(status=None, limit=200):
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM inquiries" + (" WHERE status=?" if status else "")
+            + " ORDER BY id DESC LIMIT ?",
+            (status, limit) if status else (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def user_inquiries(user_id):
+    with connect() as conn:
+        rows = conn.execute("SELECT * FROM inquiries WHERE user_id=? ORDER BY id DESC", (user_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def update_inquiry(inquiry_id, reply=None, status=None):
+    sets, values = ["updated_at=?"], [now()]
+    if reply is not None:
+        sets.append("reply=?"); values.append(reply)
+    if status is not None:
+        sets.append("status=?"); values.append(status)
+    values.append(inquiry_id)
+    with connect() as conn:
+        conn.execute(f"UPDATE inquiries SET {', '.join(sets)} WHERE id=?", values)
+
+
+# ---------------------------------------------------------------- admin
+
+def admin_stats(since):
+    """Counts the owner's dashboard leads with."""
+    with connect() as conn:
+        q = lambda sql, *a: conn.execute(sql, a).fetchone()[0]
+        return {
+            "users": q("SELECT COUNT(*) FROM users"),
+            "users_new": q("SELECT COUNT(*) FROM users WHERE created_at >= ?", since),
+            "paid": q("SELECT COUNT(*) FROM users WHERE plan IN ('student','pro') AND (plan_until IS NULL OR plan_until >= ?)", now()),
+            "sessions": q("SELECT COUNT(*) FROM sessions"),
+            "sessions_new": q("SELECT COUNT(*) FROM sessions WHERE created_at >= ?", since),
+            "seconds_month": q("SELECT COALESCE(SUM(seconds),0) FROM usage_log WHERE created_at >= ?", since),
+            "revenue_month": q("SELECT COALESCE(SUM(amount),0) FROM orders WHERE created_at >= ? AND status='paid'", since),
+            "orders_month": q("SELECT COUNT(*) FROM orders WHERE created_at >= ?", since),
+            "open_inquiries": q("SELECT COUNT(*) FROM inquiries WHERE status='open'"),
+        }
+
+
+def admin_users(query=None, limit=200):
+    with connect() as conn:
+        like = f"%{(query or '').strip()}%"
+        rows = conn.execute(
+            "SELECT u.*, "
+            " (SELECT COUNT(*) FROM sessions s WHERE s.user_id=u.id) AS session_count,"
+            " (SELECT COALESCE(SUM(seconds),0) FROM usage_log l WHERE l.user_id=u.id) AS seconds_total,"
+            " (SELECT COALESCE(SUM(amount),0) FROM orders o WHERE o.user_id=u.id AND o.status='paid') AS paid_total"
+            " FROM users u"
+            + (" WHERE u.email LIKE ? OR u.name LIKE ?" if query else "")
+            + " ORDER BY u.last_seen DESC LIMIT ?",
+            (like, like, limit) if query else (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def admin_orders(limit=200):
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT o.*, u.email FROM orders o LEFT JOIN users u ON u.id=o.user_id ORDER BY o.id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]

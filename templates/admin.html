@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Admin — Heardit{% endblock %}
+
+{% block body %}
+<div class="page">
+  <div class="page-head" style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+    <div><h1>Admin</h1><p class="hint">Owner only. Everything here is live data from the app's database.</p></div>
+    <nav class="seg">
+      {% for t, label in [('overview','Overview'),('users','Users'),('orders','Orders'),('promos','Codes'),('inquiries','Inbox')] %}
+      <a class="seg-btn" href="{{ url_for('admin', tab=t) }}" aria-pressed="{{ 'true' if tab == t else 'false' }}">{{ label }}{% if t == 'inquiries' and stats.open_inquiries %} ({{ stats.open_inquiries }}){% endif %}</a>
+      {% endfor %}
+    </nav>
+  </div>
+
+  {% if tab == 'overview' %}
+  <div class="admin-grid">
+    {% for label, value, sub in [
+      ('Users', stats.users, stats.users_new ~ ' new this month'),
+      ('Paying', stats.paid, 'active paid plans'),
+      ('Notes', stats.sessions, stats.sessions_new ~ ' this month'),
+      ('Hours this month', (stats.seconds_month // 3600) ~ 'h ' ~ ((stats.seconds_month % 3600) // 60) ~ 'm', 'transcribed, all users'),
+      ('Revenue this month', '₩' ~ '{:,}'.format(stats.revenue_month), stats.orders_month ~ ' orders'),
+      ('Open inquiries', stats.open_inquiries, 'waiting for a reply'),
+    ] %}
+    <div class="card card-pad"><p class="section-label">{{ label }}</p><div class="usage-big-num">{{ value }}</div><p class="hint">{{ sub }}</p></div>
+    {% endfor %}
+  </div>
+  {% if budget %}
+  <section class="card card-pad" style="margin-top:20px;">
+    <p class="section-label">Service-wide budget</p>
+    <div class="progress-shell" style="height:8px;"><div class="progress-bar {{ 'is-low' if budget.used_pct >= 85 }}" style="width:{{ budget.used_pct }}%"></div></div>
+    <p class="hint" style="margin-top:8px;">{{ budget.used_pct }}% of MONTHLY_BUDGET_MINUTES used · Stripe: {{ 'connected' if stripe_ready else 'not configured' }}</p>
+  </section>
+  {% endif %}
+
+  {% elif tab == 'users' %}
+  <form method="get" style="display:flex; gap:8px; margin-bottom:14px;"><input type="hidden" name="tab" value="users"><input class="input" name="q" value="{{ q }}" placeholder="email or name" style="max-width:300px;"><button class="btn btn-ghost btn-sm">Search</button></form>
+  <div class="card" style="overflow-x:auto;">
+  <table class="orders admin-table">
+    <thead><tr><th>Email</th><th>Plan</th><th>Until</th><th>Credit</th><th>Notes</th><th>Hours</th><th>Paid</th><th>Last seen</th><th></th></tr></thead>
+    <tbody>
+    {% for u in users %}
+    <tr data-user="{{ u.id }}">
+      <td>{{ u.email }}<br><span class="hint">{{ u.name or '' }}</span></td>
+      <td>{{ u.plan or 'free' }}</td>
+      <td>{{ (u.plan_until or '')[:10] }}</td>
+      <td>{{ (u.bonus_seconds or 0) // 60 }} min</td>
+      <td>{{ u.session_count }}</td>
+      <td>{{ '%.1f'|format((u.seconds_total or 0) / 3600) }}</td>
+      <td>₩{{ '{:,}'.format(u.paid_total or 0) }}</td>
+      <td>{{ (u.last_seen or '')[:10] }}</td>
+      <td style="white-space:nowrap;">
+        <select class="adm-plan"><option value="">plan…</option>{% for k in plans %}<option value="{{ k }}">{{ k }}</option>{% endfor %}</select>
+        <input class="input adm-months" type="number" min="1" placeholder="mo" style="width:60px;">
+        <button type="button" class="btn btn-ghost btn-sm adm-setplan">Set</button>
+        <input class="input adm-credit" type="number" min="1" placeholder="+min" style="width:70px;">
+        <button type="button" class="btn btn-ghost btn-sm adm-addcredit">Credit</button>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% elif tab == 'orders' %}
+  <div class="card" style="overflow-x:auto;">
+  <table class="orders admin-table">
+    <thead><tr><th>Date</th><th>User</th><th>Kind</th><th>Item</th><th>List</th><th>Discount</th><th>Paid</th><th>Code</th><th>Provider</th><th>Ref</th></tr></thead>
+    <tbody>
+    {% for o in orders %}
+    <tr><td>{{ o.created_at[:16].replace('T',' ') }}</td><td>{{ o.email or o.user_id }}</td><td>{{ o.kind }}</td><td>{{ o.item }}</td><td>{{ '{:,}'.format(o.list_price) }}</td><td>{{ '{:,}'.format(o.discount) }}</td><td><strong>{{ '{:,}'.format(o.amount) }}</strong></td><td>{{ o.promo_code or '' }}</td><td>{{ o.provider }}</td><td class="hint" style="max-width:180px; overflow:hidden; text-overflow:ellipsis;">{{ o.provider_ref or '' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% elif tab == 'promos' %}
+  <section class="card card-pad" style="margin-bottom:16px;">
+    <p class="section-label">New code</p>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+      <input class="input" id="pc-code" placeholder="CODE" style="width:140px; text-transform:uppercase;">
+      <select class="input" id="pc-kind"><option value="percent">% off</option><option value="fixed">KRW off</option><option value="comp">free plan</option></select>
+      <input class="input" id="pc-value" type="number" placeholder="value" style="width:90px;">
+      <select class="input" id="pc-plan"><option value="">plan (comp)</option>{% for k in plans if k != 'free' %}<option value="{{ k }}">{{ k }}</option>{% endfor %}</select>
+      <input class="input" id="pc-months" type="number" placeholder="months" style="width:90px;">
+      <input class="input" id="pc-uses" type="number" placeholder="max uses" style="width:100px;">
+      <input class="input" id="pc-expires" type="date">
+      <input class="input" id="pc-note" placeholder="note" style="width:140px;">
+      <button type="button" class="btn btn-primary btn-sm" id="pc-add">Add</button>
+    </div>
+    <p class="hint" style="margin-top:8px;">Discounts are floored at 55% of list price at checkout. Comp codes grant the plan for free; keep max uses small.</p>
+  </section>
+  <div class="card" style="overflow-x:auto;">
+  <table class="orders admin-table">
+    <thead><tr><th>Code</th><th>Kind</th><th>Value</th><th>Plan</th><th>Months</th><th>Uses</th><th>Expires</th><th>Note</th><th></th></tr></thead>
+    <tbody>
+    {% for r in promos %}
+    <tr><td><strong>{{ r.code }}</strong></td><td>{{ r.kind }}</td><td>{{ r.value }}</td><td>{{ r.plan or '' }}</td><td>{{ r.months if r.kind == 'comp' else '' }}</td><td>{{ r.uses }}/{{ r.max_uses if r.max_uses is not none else '∞' }}</td><td>{{ (r.expires_at or '')[:10] }}</td><td>{{ r.note or '' }}</td><td><button type="button" class="btn btn-ghost btn-sm pc-del" data-code="{{ r.code }}">Delete</button></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% elif tab == 'inquiries' %}
+  <div class="seg" style="margin-bottom:14px;">
+    {% for st, label in [('','All'),('open','Open'),('answered','Answered'),('closed','Closed')] %}
+    <a class="seg-btn" href="{{ url_for('admin', tab='inquiries', status=st) }}" aria-pressed="{{ 'true' if status == st else 'false' }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+  <div class="stack">
+    {% for q in inquiries %}
+    <section class="card card-pad inquiry" data-id="{{ q.id }}">
+      <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+        <div><strong>{{ q.email }}</strong> {% if q.name %}<span class="hint">{{ q.name }}</span>{% endif %} <span class="tag">{{ q.topic }}</span> <span class="tag {{ 'tag-ok' if q.status == 'answered' }}">{{ q.status }}</span></div>
+        <span class="hint">{{ q.created_at[:16].replace('T',' ') }}</span>
+      </div>
+      <p style="white-space:pre-wrap; margin:12px 0;">{{ q.message }}</p>
+      <textarea class="input inq-reply" rows="3" placeholder="Reply (shown on the user's account page)" style="width:100%; resize:vertical;">{{ q.reply or '' }}</textarea>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <button type="button" class="btn btn-primary btn-sm inq-send">Save reply</button>
+        <button type="button" class="btn btn-ghost btn-sm inq-close">Close</button>
+        <button type="button" class="btn btn-ghost btn-sm inq-open">Reopen</button>
+      </div>
+    </section>
+    {% else %}
+    <p class="hint">Nothing here.</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const J = { 'Content-Type': 'application/json' };
+async function patch(url, body) { await api(url, { method: 'PATCH', headers: J, body: JSON.stringify(body) }); }
+document.querySelectorAll('.adm-setplan').forEach((b) => b.addEventListener('click', async () => {
+  const tr = b.closest('tr'); const plan = tr.querySelector('.adm-plan').value; if (!plan) return;
+  try { await patch(`/api/admin/users/${tr.dataset.user}`, { plan, months: tr.querySelector('.adm-months').value || null }); location.reload(); } catch (e) { toast(e.message, 'bad'); }
+}));
+document.querySelectorAll('.adm-addcredit').forEach((b) => b.addEventListener('click', async () => {
+  const tr = b.closest('tr'); const m = tr.querySelector('.adm-credit').value; if (!m) return;
+  try { await patch(`/api/admin/users/${tr.dataset.user}`, { credit_minutes: Number(m) }); location.reload(); } catch (e) { toast(e.message, 'bad'); }
+}));
+const pcAdd = document.getElementById('pc-add');
+if (pcAdd) pcAdd.addEventListener('click', async () => {
+  const g = (id) => document.getElementById(id).value;
+  try {
+    await api('/api/admin/promos', { method: 'POST', headers: J, body: JSON.stringify({ code: g('pc-code'), kind: g('pc-kind'), value: g('pc-value'), plan: g('pc-plan'), months: g('pc-months'), max_uses: g('pc-uses'), expires: g('pc-expires'), note: g('pc-note') }) });
+    location.reload();
+  } catch (e) { toast(e.message, 'bad'); }
+});
+document.querySelectorAll('.pc-del').forEach((b) => b.addEventListener('click', async () => {
+  if (!confirm(`Delete ${b.dataset.code}?`)) return;
+  try { await api(`/api/admin/promos/${encodeURIComponent(b.dataset.code)}`, { method: 'DELETE' }); location.reload(); } catch (e) { toast(e.message, 'bad'); }
+}));
+document.querySelectorAll('.inquiry').forEach((card) => {
+  const id = card.dataset.id;
+  card.querySelector('.inq-send').addEventListener('click', async () => { try { await patch(`/api/admin/inquiries/${id}`, { reply: card.querySelector('.inq-reply').value }); toast('Saved', 'ok'); } catch (e) { toast(e.message, 'bad'); } });
+  card.querySelector('.inq-close').addEventListener('click', async () => { try { await patch(`/api/admin/inquiries/${id}`, { status: 'closed' }); location.reload(); } catch (e) { toast(e.message, 'bad'); } });
+  card.querySelector('.inq-open').addEventListener('click', async () => { try { await patch(`/api/admin/inquiries/${id}`, { status: 'open' }); location.reload(); } catch (e) { toast(e.message, 'bad'); } });
+});
+</script>
+{% endblock %}
