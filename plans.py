@@ -47,6 +47,7 @@ PLANS = {
         "minutes": 15 * 60,
         "price": 16900,
         "prices": {"krw": 16900, "usd": 1299},
+        "prices_year": {"krw": 169000, "usd": 11900},   # ~2 months free
         "blurb": "매일 수업 듣는 학생",
         "features": ["프리미엄 노트 (빠짐없이) + 시험 요약", "노트 직접 수정",
                      "녹음 보관 · 문장 눌러 다시 듣기", "강의 자료 PDF 나란히 보기 · PDF 기반 챗",
@@ -57,6 +58,7 @@ PLANS = {
         "minutes": 30 * 60,
         "price": 32900,
         "prices": {"krw": 32900, "usd": 2499},
+        "prices_year": {"krw": 329000, "usd": 23900},
         "blurb": "회의가 잦은 팀과 연구자",
         "features": ["스튜던트의 모든 기능", "회의 화자 분리", "긴 파일 우선 처리",
                      "추가 크레딧 10% 할인"],
@@ -65,11 +67,14 @@ PLANS = {
 
 ORDER = ["free", "student", "pro"]
 
-# One-time credit packs. Never expire; used after the month's minutes.
+# One-time credit packs for subscribers who run out mid-month. Never expire;
+# used after the month's minutes. Priced well above the plans' per-hour rate
+# so a subscription is always the better deal, and not sold to free accounts.
 TOPUPS = {
-    "topup5": {"name": "5시간 크레딧", "minutes": 5 * 60, "price": 6900, "prices": {"krw": 6900, "usd": 499}},
-    "topup15": {"name": "15시간 크레딧", "minutes": 15 * 60, "price": 17900, "prices": {"krw": 17900, "usd": 1299}},
+    "topup5": {"name": "5시간 크레딧", "minutes": 5 * 60, "price": 9900, "prices": {"krw": 9900, "usd": 699}},
+    "topup15": {"name": "15시간 크레딧", "minutes": 15 * 60, "price": 24900, "prices": {"krw": 24900, "usd": 1799}},
 }
+TOPUPS_SUBSCRIBERS_ONLY = True
 
 # What each tier unlocks. Checked server-side in the routes, not just hidden
 # in the UI. The free tier is the honest trial: live transcription, notes
@@ -253,8 +258,18 @@ def money(amount, currency="krw", lang="en", per_month=False):
     return text
 
 
-def price_of(spec, currency):
-    return int(spec["prices"].get(currency, spec["prices"]["krw"]))
+def price_of(spec, currency, interval="month"):
+    table = spec.get("prices_year") if interval == "year" else spec["prices"]
+    table = table or spec["prices"]
+    return int(table.get(currency, table["krw"]))
+
+
+def yearly_saving_pct(spec, currency="usd"):
+    """How much a year costs less than twelve months, as a whole percent."""
+    if not spec.get("prices_year"):
+        return 0
+    monthly = price_of(spec, currency) * 12
+    return int(round((1 - price_of(spec, currency, "year") / monthly) * 100)) if monthly else 0
 
 
 # ------------------------------------------------------------ promo codes

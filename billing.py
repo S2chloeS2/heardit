@@ -50,12 +50,18 @@ def _iso(dt):
 # ------------------------------------------------------------- catalogue
 
 def item(key):
-    """(kind, spec) for a plan or top-up key."""
+    """(kind, spec) for a plan, a yearly plan ('student_year') or a top-up."""
     key = (key or "").strip()
-    if key in plans.PLANS and plans.PLANS[key]["price"] > 0:
-        return "subscription", {"key": key, **plans.PLANS[key]}
+    interval = "month"
+    base = key
+    if key.endswith("_year"):
+        base, interval = key[:-5], "year"
+    if base in plans.PLANS and plans.PLANS[base]["price"] > 0:
+        if interval == "year" and not plans.PLANS[base].get("prices_year"):
+            raise BillingError("Unknown item.")
+        return "subscription", {"key": key, "plan": base, "interval": interval, **plans.PLANS[base]}
     if key in plans.TOPUPS:
-        return "topup", {"key": key, **plans.TOPUPS[key]}
+        return "topup", {"key": key, "plan": None, "interval": None, **plans.TOPUPS[key]}
     raise BillingError("Unknown item.")
 
 
@@ -124,7 +130,11 @@ def quote(key, user, code=None, currency="krw"):
     """What a purchase would cost: list price, discount, final, promo used."""
     kind, spec = item(key)
     currency = currency if currency in plans.CURRENCIES else "krw"
-    list_price = plans.price_of(spec, currency) if kind == "subscription" else topup_price(key, user, currency)
+    if kind == "topup" and plans.TOPUPS_SUBSCRIBERS_ONLY and plans.plan_key(user) == "free":
+        import i18n
+        raise BillingError(i18n._("추가 크레딧은 스튜던트·프로 구독 중에만 살 수 있습니다."))
+    list_price = (plans.price_of(spec, currency, spec["interval"]) if kind == "subscription"
+                  else topup_price(key, user, currency))
     promo = validate_promo(code, user, purchase_kind=kind) if code else None
     final, discount = plans.discounted(list_price, promo, currency)
     return {
@@ -142,7 +152,7 @@ def _promo_label(promo, kind):
     else:
         base = i18n._("{n} 할인").format(n=plans.money(promo["value"], "krw", i18n.current_lang()))
     if kind == "subscription":
-        return base + " · " + i18n._("첫 달에 적용")
+        return base + " · " + i18n._("첫 결제에 적용")
     return base
 
 
@@ -177,7 +187,9 @@ def fulfil(user, q, provider, provider_ref):
     if q["kind"] == "subscription":
         # Stripe keeps the subscription alive; plan_until is only a safety net
         # so a missed cancellation webhook still lapses the plan eventually.
-        db.set_plan(user["id"], spec["key"], until=_iso(_now() + timedelta(days=35)))
+        days = 370 if spec.get("interval") == "year" else 35
+        db.set_plan(user["id"], spec["plan"], until=_iso(_now() + timedelta(days=days)))
+        db.set_cancel_flag(user["id"], False)
         seconds = 0
     else:
         seconds = spec["minutes"] * 60
@@ -196,9 +208,11 @@ def renew(user, invoice_id, amount, currency="krw"):
     key = plans.plan_key(user)
     if key == "free":
         return
-    db.set_plan(user["id"], key, until=_iso(_now() + timedelta(days=35)))
+    yearly = amount >= plans.price_of(plans.PLANS[key], currency, "year") * 0.9 if plans.PLANS[key].get("prices_year") else False
+    db.set_plan(user["id"], key, until=_iso(_now() + timedelta(days=370 if yearly else 35)))
     db.set_cancel_flag(user["id"], False)
-    db.add_order(user["id"], "renewal", key, amount=amount, list_price=plans.price_of(plans.PLANS[key], currency),
+    db.add_order(user["id"], "renewal", key + ("_year" if yearly else ""), amount=amount,
+                 list_price=plans.price_of(plans.PLANS[key], currency, "year" if yearly else "month"),
                  provider="stripe", provider_ref=invoice_id, currency=currency)
 
 
@@ -220,7 +234,7 @@ def checkout_url(user, q, success_url, cancel_url):
             "price_data": {
                 "currency": q["currency"],
                 "unit_amount": q["list_price"],
-                "recurring": {"interval": "month"},
+                "recurring": {"interval": spec.get("interval") or "month"},
                 "product_data": {"name": f"Heardit {name}"},
             },
             "quantity": 1,
@@ -261,6 +275,11 @@ def checkout_url(user, q, success_url, cancel_url):
         params["discounts"] = [{"coupon": coupon.id}]
     if mode == "subscription":
         params["subscription_data"] = {"metadata": {"user_id": str(user["id"]), "item": spec["key"]}}
+    # Subscribers switching plans: Stripe keeps one subscription per customer
+    # only if we cancel the old one, which the portal handles; a second
+    # checkout while subscribed is refused up front.
+    if mode == "subscription" and user.get("stripe_subscription_id"):
+        raise BillingError("You already have a subscription. Change plans from Manage subscription.")
 
     session = stripe.checkout.Session.create(**params)
     return session.url

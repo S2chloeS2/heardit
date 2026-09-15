@@ -11,7 +11,7 @@
     <h3>{{ _(p.name) }}</h3>
     {% set amt = p.prices[cur] %}
     <div class="lp-price-amount">{% if cur == 'krw' %}{% if lang == 'ko' %}{{ '{:,}'.format(amt) }}<small>원{% if amt %} / 월{% endif %}</small>{% else %}<small>₩</small>{{ '{:,}'.format(amt) }}{% if amt %}<small> / mo</small>{% endif %}{% endif %}{% else %}<small>$</small>{{ '%.2f'|format(amt / 100) if amt else '0' }}{% if amt %}<small>{{ ' / 월' if lang == 'ko' else ' / mo' }}</small>{% endif %}{% endif %}</div>
-    <p class="lp-price-hours">{% if lang == 'ko' %}월 {{ p.minutes // 60 }}시간 · {{ p.blurb }}{% else %}{{ p.minutes // 60 }} hours / month · {{ _(p.blurb) }}{% endif %}</p>
+    <p class="lp-price-hours">{% if lang == 'ko' %}월 {{ p.minutes // 60 }}시간 · {{ p.blurb }}{% else %}{{ p.minutes // 60 }} hours / month · {{ _(p.blurb) }}{% endif %}{% if p.prices_year and mode == 'landing' %}<br><span class="hint">{{ _('연간') }} {{ p.prices_year[cur] | money(cur) }}{{ ' / 년' if lang == 'ko' else ' / yr' }} · {{ _('{n}% 절약').format(n=yearly_pct[key]) }}</span>{% endif %}</p>
     <ul>{% for f in p.features %}<li>{{ _(f) }}</li>{% endfor %}</ul>
     {% if mode == 'landing' %}
       <a class="btn {{ 'btn-primary' if key == 'student' else 'btn-ghost' }}" href="{{ url_for('auth.login') }}">{{ _('무료로 먼저 써보기') if key == 'student' else _('시작하기') }}</a>
@@ -20,7 +20,8 @@
     {% elif not p.price %}
       <span class="hint">{{ _('구독을 해지하면 무료로 돌아갑니다.') }}</span>
     {% elif payments_open %}
-      <button type="button" class="btn {{ 'btn-primary' if key == 'student' else 'btn-ghost' }} buy-btn" data-item="{{ key }}" data-name="{{ _(p.name) }}">{{ _('이 플랜으로') }}</button>
+      <button type="button" class="btn {{ 'btn-primary' if key == 'student' else 'btn-ghost' }} buy-btn" data-item="{{ key }}" data-name="{{ _(p.name) }}">{{ _('월 결제로 시작') }}</button>
+      {% if p.prices_year %}<button type="button" class="btn btn-ghost btn-sm buy-btn" style="margin-top:8px;" data-item="{{ key }}_year" data-name="{{ _(p.name) }} · {{ _('연간') }}">{{ _('연간 결제') }} {{ p.prices_year[cur] | money(cur) }}{{ ' / 년' if lang == 'ko' else ' / yr' }} · {{ _('{n}% 절약').format(n=yearly_pct[key]) }}</button>{% endif %}
     {% else %}
       <button class="btn btn-ghost" disabled>{{ _('준비 중') }}</button>
     {% endif %}
@@ -31,7 +32,7 @@
 <div class="topups">
   <div>
     <p class="section-label" style="margin:0 0 4px;">{{ _('추가 크레딧') }}</p>
-    <p class="hint" style="margin:0;">{{ _('시간만 더합니다. 시험 요약·다시 듣기 같은 기능은 플랜을 따릅니다. 이번 달 시간을 다 쓰면 이어서 쓰이고, 만료되지 않습니다. 프로는 10% 할인.') }}</p>
+    <p class="hint" style="margin:0;">{{ _('구독 중인 분이 이번 달 시간을 다 썼을 때 시간만 더하는 팩입니다. 만료되지 않고, 프로는 10% 할인. 무료 계정은 구독 후에 살 수 있습니다.') }}</p>
   </div>
   <div class="topup-list">
     {% for key, t in topups.items() %}
@@ -39,7 +40,8 @@
       <strong>{{ _(t.name) }}</strong>
       <span class="topup-price">{{ t.prices[cur] | money(cur) }}</span>
       {% if mode == 'landing' %}<a class="btn btn-ghost btn-sm" href="{{ url_for('auth.login') }}">{{ _('시작하기') }}</a>
-      {% elif payments_open %}<button type="button" class="btn btn-ghost btn-sm buy-btn" data-item="{{ key }}" data-name="{{ _(t.name) }}">{{ _('구매') }}</button>
+      {% elif payments_open and current in ['student', 'pro'] %}<button type="button" class="btn btn-ghost btn-sm buy-btn" data-item="{{ key }}" data-name="{{ _(t.name) }}">{{ _('구매') }}</button>
+      {% elif payments_open %}<span class="hint">🔒 {{ _('구독 후') }}</span>
       {% else %}<button class="btn btn-ghost btn-sm" disabled>{{ _('준비 중') }}</button>{% endif %}
     </div>
     {% endfor %}

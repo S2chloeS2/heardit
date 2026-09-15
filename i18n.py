@@ -553,4 +553,13 @@ TRANSLATIONS = {
 
     "시간만 더합니다. 시험 요약·다시 듣기 같은 기능은 플랜을 따릅니다. 이번 달 시간을 다 쓰면 이어서 쓰이고, 만료되지 않습니다. 프로는 10% 할인.": "Hours only; features such as the exam sheet and replay follow your plan. Used after the month's hours are gone, never expires. 10% off on Pro.",
 
+    '월 결제로 시작': 'Start monthly',
+    '연간': 'Yearly',
+    '연간 결제': 'Pay yearly',
+    '{n}% 절약': 'save {n}%',
+    '구독 후': 'subscribers only',
+    '첫 결제에 적용': 'applied to the first payment',
+    '추가 크레딧은 스튜던트·프로 구독 중에만 살 수 있습니다.': 'Credit packs are available while subscribed to Student or Pro.',
+    '구독 중인 분이 이번 달 시간을 다 썼을 때 시간만 더하는 팩입니다. 만료되지 않고, 프로는 10% 할인. 무료 계정은 구독 후에 살 수 있습니다.': 'For subscribers who run out of hours mid-month: hours only, never expire, 10% off on Pro. Free accounts can buy after subscribing.',
+
 }

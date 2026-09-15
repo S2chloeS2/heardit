@@ -71,6 +71,7 @@ def inject_user():
         "is_owner": plans.is_owner(user) if user else False,
         "cur": current_currency(),
         "currencies": plans.CURRENCIES,
+        "yearly_pct": {k: plans.yearly_saving_pct(v, current_currency()) for k, v in plans.PLANS.items()},
     }
 
 
@@ -480,7 +481,9 @@ def api_billing_quote():
         "item": q["item"]["key"], "name": i18n._(q["item"]["name"]),
         "list_price_label": plans.money(q["list_price"], q["currency"], lang),
         "discount_label": plans.money(q["discount"], q["currency"], lang),
-        "amount_label": plans.money(q["amount"], q["currency"], lang, per_month=q["kind"] == "subscription"),
+        "amount_label": plans.money(q["amount"], q["currency"], lang)
+                        + ((" / 년" if lang == "ko" else " / yr") if q["item"].get("interval") == "year"
+                           else (" / 월" if lang == "ko" else " / mo") if q["kind"] == "subscription" else ""),
     })
 
 
