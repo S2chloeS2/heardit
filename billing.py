@@ -273,12 +273,27 @@ def portal_url(user, return_url):
     ).url
 
 
+class SignatureError(Exception):
+    pass
+
+
 def handle_webhook(payload, signature):
     """Verify and apply one Stripe event. Returns a short description."""
     stripe = _stripe()
-    event = stripe.Webhook.construct_event(payload, signature, STRIPE_WEBHOOK_SECRET)
+    try:
+        event = stripe.Webhook.construct_event(payload, signature, STRIPE_WEBHOOK_SECRET)
+    except Exception as exc:
+        raise SignatureError(str(exc)) from exc
     kind = event["type"]
     obj = event["data"]["object"]
+    # "Thin" event payloads carry only ids; fetch the full object when the
+    # fields we need are missing.
+    if kind == "checkout.session.completed" and "metadata" not in obj:
+        obj = stripe.checkout.Session.retrieve(obj["id"])
+    elif kind == "invoice.paid" and "customer" not in obj:
+        obj = stripe.Invoice.retrieve(obj["id"])
+    elif kind.startswith("customer.subscription.") and "customer" not in obj:
+        obj = stripe.Subscription.retrieve(obj["id"])
 
     if kind == "checkout.session.completed":
         meta = obj.get("metadata") or {}

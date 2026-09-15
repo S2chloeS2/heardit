@@ -83,19 +83,44 @@ def duration_of(path):
         return 0.0
 
 
+def _ydl_common():
+    """Options every yt-dlp call shares.
+
+    YouTube blocks most datacenter IPs (Render, AWS) with HTTP 403. Two ways
+    around it, both optional and set by env: YTDLP_PROXY (a residential or
+    rotating proxy URL) and YTDLP_COOKIES (path to a cookies.txt exported
+    from a signed-in browser)."""
+    opts = {"quiet": True, "no_warnings": True}
+    proxy = os.getenv("YTDLP_PROXY")
+    if proxy:
+        opts["proxy"] = proxy
+    cookies = os.getenv("YTDLP_COOKIES")
+    if cookies and os.path.exists(cookies):
+        opts["cookiefile"] = cookies
+    return opts
+
+
+def _friendly(exc):
+    text = str(exc)
+    if "403" in text or "Sign in to confirm" in text or "bot" in text.lower():
+        return ("YouTube is refusing requests from this server. Download the video's audio "
+                "and upload the file instead, or try a TED link.")
+    return text
+
+
 def probe(url):
     """Read a URL's metadata without downloading it."""
     target, via_search = resolve(url)
     if not via_search:
         assert_public_url(url)
-    opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+    opts = {**_ydl_common(), "skip_download": True}
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(target, download=False)
     except Exception as exc:
         if via_search:
             raise MediaError("TED 강연을 유튜브에서 찾지 못했습니다. 유튜브 TED 채널의 링크를 직접 붙여넣어 주세요.") from exc
-        raise MediaError(f"Could not read that link: {exc}") from exc
+        raise MediaError(f"Could not read that link: {_friendly(exc)}") from exc
 
     if info.get("_type") == "playlist":
         entries = [e for e in info.get("entries", []) if e]
@@ -126,8 +151,7 @@ def download_audio(url, workdir):
     assert_public_url(url)
     template = os.path.join(workdir, "audio.%(ext)s")
     opts = {
-        "quiet": True,
-        "no_warnings": True,
+        **_ydl_common(),
         "format": "bestaudio/best",
         "outtmpl": template,
         "noplaylist": True,
@@ -143,7 +167,7 @@ def download_audio(url, workdir):
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([url])
     except Exception as exc:
-        raise MediaError(f"Could not download the audio: {exc}") from exc
+        raise MediaError(f"Could not download the audio: {_friendly(exc)}") from exc
 
     path = os.path.join(workdir, "audio.mp3")
     if not os.path.exists(path):

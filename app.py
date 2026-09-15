@@ -531,9 +531,12 @@ def api_billing_webhook():
         abort(404)
     try:
         note = billing.handle_webhook(request.get_data(), request.headers.get("Stripe-Signature", ""))
-    except Exception as exc:
-        app.logger.error("webhook rejected: %s", exc)
-        return fail("bad webhook", 400)
+    except billing.SignatureError as exc:
+        app.logger.error("webhook signature rejected: %s", exc)
+        return fail("bad signature: check STRIPE_WEBHOOK_SECRET", 400)
+    except Exception:
+        app.logger.error("webhook handler failed: %s", traceback.format_exc())
+        return fail("handler failed; see server log", 500)
     return jsonify({"ok": True, "note": note})
 
 
