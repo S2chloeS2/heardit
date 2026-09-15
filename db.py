@@ -194,6 +194,7 @@ def init():
             ("bonus_seconds", "INTEGER NOT NULL DEFAULT 0"),  # top-up credits
             ("stripe_customer_id", "TEXT"),
             ("stripe_subscription_id", "TEXT"),
+            ("cancel_at_end", "INTEGER NOT NULL DEFAULT 0"),  # subscription ends at plan_until
         ):
             if column not in ucols:
                 conn.execute(f"ALTER TABLE users ADD COLUMN {column} {decl}")
@@ -661,6 +662,11 @@ def add_bonus_seconds(user_id, delta):
             "UPDATE users SET bonus_seconds = MAX(0, bonus_seconds + ?) WHERE id=?",
             (int(delta), user_id),
         )
+
+
+def set_cancel_flag(user_id, flag):
+    with connect() as conn:
+        conn.execute("UPDATE users SET cancel_at_end=? WHERE id=?", (1 if flag else 0, user_id))
 
 
 def set_stripe_ids(user_id, customer_id=None, subscription_id=None):

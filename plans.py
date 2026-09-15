@@ -171,6 +171,7 @@ def allowance(user_id, user=None):
         "used_label": _label(used_s),
         "bonus_label": _label(bonus_s),
         "plan_until": user.get("plan_until"),
+        "cancel_at_end": bool(user.get("cancel_at_end")),
     }
 
 

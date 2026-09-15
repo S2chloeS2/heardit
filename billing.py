@@ -194,12 +194,14 @@ def renew(user, invoice_id, amount):
     if key == "free":
         return
     db.set_plan(user["id"], key, until=_iso(_now() + timedelta(days=35)))
+    db.set_cancel_flag(user["id"], False)
     db.add_order(user["id"], "renewal", key, amount=amount, list_price=plans.PLANS[key]["price"],
                  provider="stripe", provider_ref=invoice_id)
 
 
 def cancel(user):
     db.set_plan(user["id"], "free", until=None)
+    db.set_cancel_flag(user["id"], False)
     db.set_stripe_ids(user["id"], subscription_id=None)
 
 
@@ -299,6 +301,25 @@ def handle_webhook(payload, signature):
             renew(user, obj["id"], int(obj.get("amount_paid") or 0))
             return "renewed"
         return "no such customer"
+
+    if kind == "customer.subscription.updated":
+        # Cancelling from the portal sets cancel_at_period_end; the plan then
+        # runs to the end of the paid period and lapses on its own. Undoing
+        # the cancellation clears the date again.
+        user = db.user_by_stripe_customer(obj.get("customer"))
+        if not user:
+            return "no such customer"
+        key = plans.plan_key(user)
+        if key == "free":
+            return "not subscribed"
+        period_end = obj.get("current_period_end") or (obj.get("items", {}).get("data") or [{}])[0].get("current_period_end")
+        if obj.get("cancel_at_period_end") and period_end:
+            db.set_plan(user["id"], key, until=_iso(datetime.fromtimestamp(period_end, timezone.utc)))
+            db.set_cancel_flag(user["id"], True)
+            return "cancels at period end"
+        db.set_plan(user["id"], key, until=_iso(_now() + timedelta(days=35)))
+        db.set_cancel_flag(user["id"], False)
+        return "subscription active"
 
     if kind == "customer.subscription.deleted":
         user = db.user_by_stripe_customer(obj.get("customer"))

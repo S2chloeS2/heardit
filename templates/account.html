@@ -34,6 +34,13 @@
     </section>
     {% endif %}
 
+    {% if allowance.cancel_at_end and allowance.plan_until %}
+    <section class="card card-pad" style="border-color: var(--warn);">
+      <p class="section-label" style="color:var(--warn);">{{ _('구독 해지 예정') }}</p>
+      <p>{{ _('{plan} 플랜은 {date}까지 그대로 쓸 수 있고, 그날 이후 무료로 내려갑니다. 더 결제되지 않습니다.').format(plan=_(allowance.plan.name), date=allowance.plan_until[:10]) }}</p>
+      {% if has_portal %}<p class="hint" style="margin-top:8px;">{{ _('마음이 바뀌면 "구독 관리"에서 해지를 취소할 수 있습니다.') }}</p>{% endif %}
+    </section>
+    {% endif %}
     {% if allowance.bonus_s or allowance.plan_until %}
     <section class="card card-pad">
       <p class="section-label">{{ _('크레딧') }}</p>
@@ -41,7 +48,7 @@
         <div>
           <div class="usage-big-num">{{ allowance.bonus_label }} <small>{{ _('크레딧') }}</small></div>
           <p class="hint">{{ _('이번 달 시간을 다 쓴 뒤에 쓰입니다. 만료되지 않습니다.') }}
-            {% if allowance.plan_until and allowance.plan.key != 'free' %}<br>{{ _('{plan} 플랜은 {date}까지입니다.').format(plan=_(allowance.plan.name), date=allowance.plan_until[:10]) }}{% endif %}</p>
+            {% if allowance.plan_until and allowance.plan.key != 'free' and not allowance.cancel_at_end %}<br>{{ _('{plan} 플랜은 {date}까지입니다.').format(plan=_(allowance.plan.name), date=allowance.plan_until[:10]) }}{% endif %}</p>
         </div>
       </div>
     </section>

@@ -110,7 +110,8 @@ default); chat, keywords and translation stay on gpt-4o-mini.
 
 **Payments.** Set `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` and point a Stripe webhook at
 `/api/billing/webhook` (events: `checkout.session.completed`, `invoice.paid`,
-`customer.subscription.deleted`). Without them a local build simulates purchases so the flow can
+`customer.subscription.updated`, `customer.subscription.deleted`). Cancellations from the
+billing portal run to the end of the paid period, then lapse to Free. Without them a local build simulates purchases so the flow can
 be tested, and production shows "payments not open yet". Promo codes are managed with
 `scripts/promo.py` (`add CODE --percent 20`, `add CODE --comp pro --months 12`, `list`, `rm`) or
 seeded from `PROMO_SEED` at startup. Free-tier notes are deleted after 30 days by a daily sweep.

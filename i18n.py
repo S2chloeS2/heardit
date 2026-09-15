@@ -545,4 +545,8 @@ TRANSLATIONS = {
     '확인 중': 'Open',
     '아직 문의가 없습니다.': 'No inquiries yet.',
 
+    '구독 해지 예정': 'Subscription ending',
+    '{plan} 플랜은 {date}까지 그대로 쓸 수 있고, 그날 이후 무료로 내려갑니다. 더 결제되지 않습니다.': 'Your {plan} plan stays active until {date}, then drops to Free. You will not be charged again.',
+    '마음이 바뀌면 "구독 관리"에서 해지를 취소할 수 있습니다.': 'Changed your mind? Undo the cancellation under "Manage subscription".',
+
 }
