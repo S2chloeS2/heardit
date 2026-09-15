@@ -19,7 +19,7 @@
       ('Paying', stats.paid, 'active paid plans'),
       ('Notes', stats.sessions, stats.sessions_new ~ ' this month'),
       ('Hours this month', (stats.seconds_month // 3600) ~ 'h ' ~ ((stats.seconds_month % 3600) // 60) ~ 'm', 'transcribed, all users'),
-      ('Revenue this month', '₩' ~ '{:,}'.format(stats.revenue_month), stats.orders_month ~ ' orders'),
+      ('Revenue this month', '$' ~ '{:,.2f}'.format(stats.revenue_month_usd / 100) ~ ' + ₩' ~ '{:,}'.format(stats.revenue_month_krw), stats.orders_month ~ ' orders'),
       ('Open inquiries', stats.open_inquiries, 'waiting for a reply'),
     ] %}
     <div class="card card-pad"><p class="section-label">{{ label }}</p><div class="usage-big-num">{{ value }}</div><p class="hint">{{ sub }}</p></div>
@@ -47,7 +47,7 @@
       <td>{{ (u.bonus_seconds or 0) // 60 }} min</td>
       <td>{{ u.session_count }}</td>
       <td>{{ '%.1f'|format((u.seconds_total or 0) / 3600) }}</td>
-      <td>₩{{ '{:,}'.format(u.paid_total or 0) }}</td>
+      <td>{% if u.paid_usd %}${{ '{:,.2f}'.format(u.paid_usd / 100) }}{% endif %}{% if u.paid_usd and u.paid_krw %} + {% endif %}{% if u.paid_krw %}₩{{ '{:,}'.format(u.paid_krw) }}{% endif %}{% if not u.paid_usd and not u.paid_krw %}–{% endif %}</td>
       <td>{{ (u.last_seen or '')[:10] }}</td>
       <td style="white-space:nowrap;">
         <select class="adm-plan"><option value="">plan…</option>{% for k in plans %}<option value="{{ k }}">{{ k }}</option>{% endfor %}</select>
@@ -68,7 +68,7 @@
     <thead><tr><th>Date</th><th>User</th><th>Kind</th><th>Item</th><th>List</th><th>Discount</th><th>Paid</th><th>Code</th><th>Provider</th><th>Ref</th></tr></thead>
     <tbody>
     {% for o in orders %}
-    <tr><td>{{ o.created_at[:16].replace('T',' ') }}</td><td>{{ o.email or o.user_id }}</td><td>{{ o.kind }}</td><td>{{ o.item }}</td><td>{{ '{:,}'.format(o.list_price) }}</td><td>{{ '{:,}'.format(o.discount) }}</td><td><strong>{{ '{:,}'.format(o.amount) }}</strong></td><td>{{ o.promo_code or '' }}</td><td>{{ o.provider }}</td><td class="hint" style="max-width:180px; overflow:hidden; text-overflow:ellipsis;">{{ o.provider_ref or '' }}</td></tr>
+    <tr><td>{{ o.created_at[:16].replace('T',' ') }}</td><td>{{ o.email or o.user_id }}</td><td>{{ o.kind }}</td><td>{{ o.item }}</td><td>{{ o.list_price | money(o.currency) }}</td><td>{{ o.discount | money(o.currency) }}</td><td><strong>{{ o.amount | money(o.currency) }}</strong></td><td>{{ o.promo_code or '' }}</td><td>{{ o.provider }}</td><td class="hint" style="max-width:180px; overflow:hidden; text-overflow:ellipsis;">{{ o.provider_ref or '' }}</td></tr>
     {% endfor %}
     </tbody>
   </table>

@@ -199,6 +199,10 @@ def init():
             if column not in ucols:
                 conn.execute(f"ALTER TABLE users ADD COLUMN {column} {decl}")
 
+        ocols = {row["name"] for row in conn.execute("PRAGMA table_info(orders)")}
+        if "currency" not in ocols:
+            conn.execute("ALTER TABLE orders ADD COLUMN currency TEXT NOT NULL DEFAULT 'krw'")
+
         lcols = {row["name"] for row in conn.execute("PRAGMA table_info(usage_log)")}
         if "bonus_s" not in lcols:
             conn.execute("ALTER TABLE usage_log ADD COLUMN bonus_s INTEGER NOT NULL DEFAULT 0")
@@ -685,14 +689,14 @@ def user_by_stripe_customer(customer_id):
 # ------------------------------------------------------------- orders
 
 def add_order(user_id, kind, item, amount, list_price=0, discount=0, seconds=0,
-              promo_code=None, provider="simulated", provider_ref=None, status="paid"):
+              promo_code=None, provider="simulated", provider_ref=None, status="paid", currency="krw"):
     with connect() as conn:
         cur = conn.execute(
             "INSERT INTO orders (user_id, kind, item, seconds, list_price, discount, amount,"
-            " promo_code, provider, provider_ref, status, created_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            " promo_code, provider, provider_ref, status, created_at, currency)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (user_id, kind, item, int(seconds), int(list_price), int(discount), int(amount),
-             promo_code, provider, provider_ref, status, now()),
+             promo_code, provider, provider_ref, status, now(), currency),
         )
         return cur.lastrowid
 
@@ -850,7 +854,8 @@ def admin_stats(since):
             "sessions": q("SELECT COUNT(*) FROM sessions"),
             "sessions_new": q("SELECT COUNT(*) FROM sessions WHERE created_at >= ?", since),
             "seconds_month": q("SELECT COALESCE(SUM(seconds),0) FROM usage_log WHERE created_at >= ?", since),
-            "revenue_month": q("SELECT COALESCE(SUM(amount),0) FROM orders WHERE created_at >= ? AND status='paid'", since),
+            "revenue_month_krw": q("SELECT COALESCE(SUM(amount),0) FROM orders WHERE created_at >= ? AND status='paid' AND currency='krw'", since),
+            "revenue_month_usd": q("SELECT COALESCE(SUM(amount),0) FROM orders WHERE created_at >= ? AND status='paid' AND currency='usd'", since),
             "orders_month": q("SELECT COUNT(*) FROM orders WHERE created_at >= ?", since),
             "open_inquiries": q("SELECT COUNT(*) FROM inquiries WHERE status='open'"),
         }
@@ -863,7 +868,8 @@ def admin_users(query=None, limit=200):
             "SELECT u.*, "
             " (SELECT COUNT(*) FROM sessions s WHERE s.user_id=u.id) AS session_count,"
             " (SELECT COALESCE(SUM(seconds),0) FROM usage_log l WHERE l.user_id=u.id) AS seconds_total,"
-            " (SELECT COALESCE(SUM(amount),0) FROM orders o WHERE o.user_id=u.id AND o.status='paid') AS paid_total"
+            " (SELECT COALESCE(SUM(amount),0) FROM orders o WHERE o.user_id=u.id AND o.status='paid' AND o.currency='krw') AS paid_krw,"
+            " (SELECT COALESCE(SUM(amount),0) FROM orders o WHERE o.user_id=u.id AND o.status='paid' AND o.currency='usd') AS paid_usd"
             " FROM users u"
             + (" WHERE u.email LIKE ? OR u.name LIKE ?" if query else "")
             + " ORDER BY u.last_seen DESC LIMIT ?",

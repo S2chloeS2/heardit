@@ -1,12 +1,16 @@
 {# Plan cards shared by the landing page, /pricing and the account page.
    Expects: plans, order, topups, current (plan key or none), payments_open, mode ('landing'|'buy') #}
+<div class="currency-switch"><div class="seg">
+  {% for code in ['usd', 'krw'] %}<a class="seg-btn" href="{{ url_for('set_currency', code=code) }}" aria-pressed="{{ 'true' if cur == code else 'false' }}">{{ currencies[code].name }}</a>{% endfor %}
+</div></div>
 <div class="lp-prices">
   {% for key in order %}{% set p = plans[key] %}
   <div class="lp-price {{ 'is-featured' if key == 'student' }}" data-plan="{{ key }}">
     {% if current == key %}<span class="lp-price-flag">{{ _('현재 플랜') }}</span>
     {% elif key == 'student' %}<span class="lp-price-flag" {% if current %}style="background:var(--sunk); color:var(--ink-mute);"{% endif %}>{{ _('가장 많이 씁니다') }}</span>{% endif %}
     <h3>{{ _(p.name) }}</h3>
-    <div class="lp-price-amount">{% if lang == 'ko' %}{{ '{:,}'.format(p.price) }}<small>원{% if p.price %} / 월{% endif %}</small>{% else %}<small>₩</small>{{ '{:,}'.format(p.price) }}{% if p.price %}<small> / mo</small>{% endif %}{% endif %}</div>
+    {% set amt = p.prices[cur] %}
+    <div class="lp-price-amount">{% if cur == 'krw' %}{% if lang == 'ko' %}{{ '{:,}'.format(amt) }}<small>원{% if amt %} / 월{% endif %}</small>{% else %}<small>₩</small>{{ '{:,}'.format(amt) }}{% if amt %}<small> / mo</small>{% endif %}{% endif %}{% else %}<small>$</small>{{ '%.2f'|format(amt / 100) if amt else '0' }}{% if amt %}<small>{{ ' / 월' if lang == 'ko' else ' / mo' }}</small>{% endif %}{% endif %}</div>
     <p class="lp-price-hours">{% if lang == 'ko' %}월 {{ p.minutes // 60 }}시간 · {{ p.blurb }}{% else %}{{ p.minutes // 60 }} hours / month · {{ _(p.blurb) }}{% endif %}</p>
     <ul>{% for f in p.features %}<li>{{ _(f) }}</li>{% endfor %}</ul>
     {% if mode == 'landing' %}
@@ -33,7 +37,7 @@
     {% for key, t in topups.items() %}
     <div class="topup">
       <strong>{{ _(t.name) }}</strong>
-      <span class="topup-price">{% if lang == 'ko' %}{{ '{:,}'.format(t.price) }}원{% else %}₩{{ '{:,}'.format(t.price) }}{% endif %}</span>
+      <span class="topup-price">{{ t.prices[cur] | money(cur) }}</span>
       {% if mode == 'landing' %}<a class="btn btn-ghost btn-sm" href="{{ url_for('auth.login') }}">{{ _('시작하기') }}</a>
       {% elif payments_open %}<button type="button" class="btn btn-ghost btn-sm buy-btn" data-item="{{ key }}" data-name="{{ _(t.name) }}">{{ _('구매') }}</button>
       {% else %}<button class="btn btn-ghost btn-sm" disabled>{{ _('준비 중') }}</button>{% endif %}
@@ -71,16 +75,15 @@ document.addEventListener('DOMContentLoaded', function () {
   const goBtn = document.getElementById('buy-go');
   let item = null;
 
-  const won = (n) => T.lang === 'ko' ? `${n.toLocaleString()}원` : `₩${n.toLocaleString()}`;
 
   async function refresh() {
     quoteEl.textContent = '…';
     try {
       const q = await api('/api/billing/quote', { method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ item, code: codeEl.value.trim() }) });
-      let html = `<div class="quote-row"><span>${T.listPrice}</span><span>${won(q.list_price)}</span></div>`;
-      if (q.discount) html += `<div class="quote-row is-discount"><span>${q.promo_note || T.discount}</span><span>-${won(q.discount)}</span></div>`;
-      html += `<div class="quote-row is-total"><span>${T.total}</span><span>${won(q.amount)}${q.kind === 'subscription' ? T.perMonth : ''}</span></div>`;
+      let html = `<div class="quote-row"><span>${T.listPrice}</span><span>${q.list_price_label}</span></div>`;
+      if (q.discount) html += `<div class="quote-row is-discount"><span>${q.promo_note || T.discount}</span><span>-${q.discount_label}</span></div>`;
+      html += `<div class="quote-row is-total"><span>${T.total}</span><span>${q.amount_label}</span></div>`;
       quoteEl.innerHTML = html;
       goBtn.disabled = false;
     } catch (err) {

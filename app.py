@@ -69,7 +69,32 @@ def inject_user():
         "current_user": user,
         "allowance": plans.allowance(user["id"], user) if user else None,
         "is_owner": plans.is_owner(user) if user else False,
+        "cur": current_currency(),
+        "currencies": plans.CURRENCIES,
     }
+
+
+def current_currency():
+    """KRW for the Korean UI, USD otherwise, unless the visitor picked one."""
+    from flask import session as flask_session
+    return plans.currency_for(i18n.current_lang(), flask_session.get("currency"))
+
+
+@app.template_filter("money")
+def money_filter(amount, currency=None, per_month=False):
+    return plans.money(int(amount or 0), currency or current_currency(), i18n.current_lang(), per_month)
+
+
+@app.route("/currency/<code>")
+def set_currency(code):
+    from flask import redirect, session as flask_session
+    if code in plans.CURRENCIES:
+        flask_session["currency"] = code
+        flask_session.permanent = True
+    target = request.referrer or url_for("pricing")
+    if not target.startswith(request.host_url):
+        target = url_for("pricing")
+    return redirect(target)
 
 
 # ------------------------------------------------------- production guards
@@ -446,10 +471,17 @@ def api_folder_chat(folder_id):
 def api_billing_quote():
     body = request.get_json(silent=True) or {}
     try:
-        q = billing.quote(body.get("item"), auth.current_user(), code=(body.get("code") or "").strip() or None)
+        q = billing.quote(body.get("item"), auth.current_user(), code=(body.get("code") or "").strip() or None,
+                          currency=current_currency())
     except billing.BillingError as exc:
         return fail(str(exc))
-    return jsonify({k: v for k, v in q.items() if k != "item"} | {"item": q["item"]["key"], "name": i18n._(q["item"]["name"])})
+    lang = i18n.current_lang()
+    return jsonify({k: v for k, v in q.items() if k != "item"} | {
+        "item": q["item"]["key"], "name": i18n._(q["item"]["name"]),
+        "list_price_label": plans.money(q["list_price"], q["currency"], lang),
+        "discount_label": plans.money(q["discount"], q["currency"], lang),
+        "amount_label": plans.money(q["amount"], q["currency"], lang, per_month=q["kind"] == "subscription"),
+    })
 
 
 @app.route("/api/billing/checkout", methods=["POST"])
@@ -460,7 +492,8 @@ def api_billing_checkout():
     user = auth.current_user()
     body = request.get_json(silent=True) or {}
     try:
-        q = billing.quote(body.get("item"), user, code=(body.get("code") or "").strip() or None)
+        q = billing.quote(body.get("item"), user, code=(body.get("code") or "").strip() or None,
+                          currency=current_currency())
     except billing.BillingError as exc:
         return fail(str(exc))
 

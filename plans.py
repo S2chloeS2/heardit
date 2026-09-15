@@ -23,11 +23,21 @@ import db
 # sheet ~350, chat/keywords ~50, translation ~10. Rounded up.
 COST_PER_HOUR = 750  # KRW
 
+# Two price lists. KRW is a zero-decimal currency (amount = won); USD is in
+# cents. `price` stays the KRW figure for older code paths.
+CURRENCIES = {
+    "krw": {"symbol": "₩", "suffix": "원", "minor": 1, "name": "KRW"},
+    "usd": {"symbol": "$", "suffix": "", "minor": 100, "name": "USD"},
+}
+DEFAULT_CURRENCY = {"ko": "krw", "en": "usd"}
+KRW_PER_USD = 1400  # for converting fixed-amount codes and the cost floor
+
 PLANS = {
     "free": {
         "name": "무료",
         "minutes": 2 * 60,
         "price": 0,
+        "prices": {"krw": 0, "usd": 0},
         "blurb": "써보기",
         "features": ["실시간 받아쓰기 · 링크 · 파일", "기본 노트 · 핵심 용어 · AI 챗",
                      "기록 30일 보관"],
@@ -36,6 +46,7 @@ PLANS = {
         "name": "스튜던트",
         "minutes": 15 * 60,
         "price": 14900,
+        "prices": {"krw": 14900, "usd": 999},
         "blurb": "매일 수업 듣는 학생",
         "features": ["프리미엄 노트 (빠짐없이) + 시험 요약", "노트 직접 수정",
                      "녹음 보관 · 문장 눌러 다시 듣기", "강의 자료 PDF 나란히 보기 · PDF 기반 챗",
@@ -45,6 +56,7 @@ PLANS = {
         "name": "프로",
         "minutes": 30 * 60,
         "price": 29900,
+        "prices": {"krw": 29900, "usd": 1999},
         "blurb": "회의가 잦은 팀과 연구자",
         "features": ["스튜던트의 모든 기능", "회의 화자 분리", "긴 파일 우선 처리",
                      "추가 크레딧 10% 할인"],
@@ -55,8 +67,8 @@ ORDER = ["free", "student", "pro"]
 
 # One-time credit packs. Never expire; used after the month's minutes.
 TOPUPS = {
-    "topup5": {"name": "5시간 크레딧", "minutes": 5 * 60, "price": 5900},
-    "topup15": {"name": "15시간 크레딧", "minutes": 15 * 60, "price": 14900},
+    "topup5": {"name": "5시간 크레딧", "minutes": 5 * 60, "price": 5900, "prices": {"krw": 5900, "usd": 399}},
+    "topup15": {"name": "15시간 크레딧", "minutes": 15 * 60, "price": 14900, "prices": {"krw": 14900, "usd": 999}},
 }
 
 # What each tier unlocks. Checked server-side in the routes, not just hidden
@@ -223,20 +235,44 @@ def _label(seconds):
     return f"{seconds}s" if seconds else "0 min"
 
 
-def price_label(krw, lang="ko"):
-    return f"{krw:,}원" if lang == "ko" else f"₩{krw:,}"
+def currency_for(lang, override=None):
+    if override in CURRENCIES:
+        return override
+    return DEFAULT_CURRENCY.get(lang, "usd")
+
+
+def money(amount, currency="krw", lang="en", per_month=False):
+    """'14,900원' / '₩14,900' / '$9.99', amount in the currency's minor unit."""
+    cur = CURRENCIES.get(currency, CURRENCIES["krw"])
+    if cur["minor"] == 1:
+        text = f"{amount:,}원" if lang == "ko" else f"₩{amount:,}"
+    else:
+        text = f"{cur['symbol']}{amount / cur['minor']:,.2f}"
+    if per_month:
+        text += " / 월" if lang == "ko" else " / mo"
+    return text
+
+
+def price_of(spec, currency):
+    return int(spec["prices"].get(currency, spec["prices"]["krw"]))
 
 
 # ------------------------------------------------------------ promo codes
 
-def discounted(price, promo):
-    """Final price after a percent/fixed code, never below the floor."""
+def discounted(price, promo, currency="krw"):
+    """Final price after a percent/fixed code, never below the floor.
+
+    Fixed codes are stored in KRW; for another currency the cut is converted
+    at KRW_PER_USD so one code works in both price lists."""
     if not promo or price <= 0:
         return price, 0
     if promo["kind"] == "percent":
         cut = price * promo["value"] // 100
     elif promo["kind"] == "fixed":
-        cut = min(price, promo["value"])
+        cut = promo["value"]
+        if currency == "usd":
+            cut = int(round(cut / KRW_PER_USD * 100))
+        cut = min(price, cut)
     else:
         return price, 0
     floor = int(price * PROMO_FLOOR)

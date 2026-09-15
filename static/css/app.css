@@ -947,3 +947,5 @@ html, body { overflow-x: clip; }
 .admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
 .admin-table td, .admin-table th { font-size: 13px; }
 .admin-table .input { padding: 4px 8px; font-size: 12.5px; }
+.currency-switch { display: flex; justify-content: center; gap: 0; margin-top: 28px; }
+.currency-switch .seg-btn { text-decoration: none; }

@@ -57,9 +57,9 @@ def item(key):
     raise BillingError("Unknown item.")
 
 
-def topup_price(key, user):
+def topup_price(key, user, currency="krw"):
     """Pro subscribers get 10% off credit packs."""
-    price = plans.TOPUPS[key]["price"]
+    price = plans.price_of(plans.TOPUPS[key], currency)
     if plans.plan_key(user) == "pro":
         price = price * 90 // 100
     return price
@@ -118,14 +118,15 @@ def validate_promo(code, user, purchase_kind=None):
     return promo
 
 
-def quote(key, user, code=None):
+def quote(key, user, code=None, currency="krw"):
     """What a purchase would cost: list price, discount, final, promo used."""
     kind, spec = item(key)
-    list_price = spec["price"] if kind == "subscription" else topup_price(key, user)
+    currency = currency if currency in plans.CURRENCIES else "krw"
+    list_price = plans.price_of(spec, currency) if kind == "subscription" else topup_price(key, user, currency)
     promo = validate_promo(code, user, purchase_kind=kind) if code else None
-    final, discount = plans.discounted(list_price, promo)
+    final, discount = plans.discounted(list_price, promo, currency)
     return {
-        "kind": kind, "item": spec, "list_price": list_price,
+        "kind": kind, "item": spec, "list_price": list_price, "currency": currency,
         "discount": discount, "amount": final,
         "promo": promo["code"] if promo else None,
         "promo_note": _promo_label(promo, kind) if promo else None,
@@ -137,7 +138,7 @@ def _promo_label(promo, kind):
     if promo["kind"] == "percent":
         base = i18n._("{n}% 할인").format(n=promo["value"])
     else:
-        base = i18n._("{n}원 할인").format(n=f"{promo['value']:,}")
+        base = i18n._("{n} 할인").format(n=plans.money(promo["value"], "krw", i18n.current_lang()))
     if kind == "subscription":
         return base + " · " + i18n._("첫 달에 적용")
     return base
@@ -183,10 +184,10 @@ def fulfil(user, q, provider, provider_ref):
         db.redeem_promo(q["promo"], user["id"])
     db.add_order(user["id"], q["kind"], spec["key"], amount=q["amount"], list_price=q["list_price"],
                  discount=q["discount"], seconds=seconds, promo_code=q.get("promo"),
-                 provider=provider, provider_ref=provider_ref)
+                 provider=provider, provider_ref=provider_ref, currency=q.get("currency", "krw"))
 
 
-def renew(user, invoice_id, amount):
+def renew(user, invoice_id, amount, currency="krw"):
     """A subscription invoice was paid: extend the safety-net expiry."""
     if db.order_exists(invoice_id):
         return
@@ -195,8 +196,8 @@ def renew(user, invoice_id, amount):
         return
     db.set_plan(user["id"], key, until=_iso(_now() + timedelta(days=35)))
     db.set_cancel_flag(user["id"], False)
-    db.add_order(user["id"], "renewal", key, amount=amount, list_price=plans.PLANS[key]["price"],
-                 provider="stripe", provider_ref=invoice_id)
+    db.add_order(user["id"], "renewal", key, amount=amount, list_price=plans.price_of(plans.PLANS[key], currency),
+                 provider="stripe", provider_ref=invoice_id, currency=currency)
 
 
 def cancel(user):
@@ -215,7 +216,7 @@ def checkout_url(user, q, success_url, cancel_url):
     if q["kind"] == "subscription":
         line = {
             "price_data": {
-                "currency": "krw",
+                "currency": q["currency"],
                 "unit_amount": q["list_price"],
                 "recurring": {"interval": "month"},
                 "product_data": {"name": f"Heardit {name}"},
@@ -226,7 +227,7 @@ def checkout_url(user, q, success_url, cancel_url):
     else:
         line = {
             "price_data": {
-                "currency": "krw",
+                "currency": q["currency"],
                 "unit_amount": q["list_price"],
                 "product_data": {"name": f"Heardit {name}"},
             },
@@ -242,7 +243,7 @@ def checkout_url(user, q, success_url, cancel_url):
         "client_reference_id": str(user["id"]),
         "metadata": {"user_id": str(user["id"]), "item": spec["key"], "promo": q.get("promo") or "",
                      "list_price": str(q["list_price"]), "discount": str(q["discount"]),
-                     "amount": str(q["amount"])},
+                     "amount": str(q["amount"]), "currency": q["currency"]},
     }
     if user.get("stripe_customer_id"):
         params["customer"] = user["stripe_customer_id"]
@@ -252,8 +253,8 @@ def checkout_url(user, q, success_url, cancel_url):
         # A one-off coupon: first month for subscriptions, the whole payment
         # for credit packs. The floor was already applied in the quote.
         coupon = stripe.Coupon.create(
-            amount_off=q["discount"], currency="krw", duration="once",
-            name=f"{q['promo']} ({q['discount']:,} KRW off)",
+            amount_off=q["discount"], currency=q["currency"], duration="once",
+            name=f"{q['promo']} ({q['discount']:,} {q['currency'].upper()} off)",
         )
         params["discounts"] = [{"coupon": coupon.id}]
     if mode == "subscription":
@@ -298,7 +299,7 @@ def handle_webhook(payload, signature):
             return "initial invoice"
         user = db.user_by_stripe_customer(obj.get("customer"))
         if user:
-            renew(user, obj["id"], int(obj.get("amount_paid") or 0))
+            renew(user, obj["id"], int(obj.get("amount_paid") or 0), currency=(obj.get("currency") or "krw").lower())
             return "renewed"
         return "no such customer"
 
@@ -341,4 +342,5 @@ def quote_from_metadata(meta, user):
         "discount": int(meta.get("discount") or 0),
         "amount": int(meta.get("amount") or spec["price"]),
         "promo": meta.get("promo") or None,
+        "currency": meta.get("currency") or "krw",
     }

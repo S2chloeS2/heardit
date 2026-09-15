@@ -85,8 +85,8 @@
         <tr>
           <td>{{ o.created_at[:10] }}</td>
           <td>{% if o.kind == 'topup' %}{{ _(topups[o.item].name) if o.item in topups else o.item }}{% else %}{{ _(plans[o.item].name) if o.item in plans else o.item }}{% if o.kind == 'renewal' %} · {{ _('갱신') }}{% elif o.kind == 'comp' %} · {{ _('코드') }}{% endif %}{% endif %}{% if o.promo_code %} <span class="tag">{{ o.promo_code }}</span>{% endif %}</td>
-          <td>{% if o.discount %}-{{ '{:,}'.format(o.discount) }}{% else %}–{% endif %}</td>
-          <td>{% if lang == 'ko' %}{{ '{:,}'.format(o.amount) }}원{% else %}₩{{ '{:,}'.format(o.amount) }}{% endif %}</td>
+          <td>{% if o.discount %}-{{ o.discount | money(o.currency) }}{% else %}–{% endif %}</td>
+          <td>{{ o.amount | money(o.currency) }}</td>
           <td>{{ _('완료') if o.status == 'paid' else o.status }}{% if o.provider == 'simulated' %} <span class="hint">({{ _('테스트') }})</span>{% endif %}</td>
         </tr>
         {% endfor %}
