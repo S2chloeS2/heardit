@@ -196,6 +196,8 @@ if (audioEl) {
 // the server per line, so turning it off and on again costs nothing.
 const translateSelect = document.getElementById('translate-select');
 let translateTarget = '';
+let translateQueue = [];
+let translateBusy = false;
 try { translateTarget = localStorage.getItem('translateTarget') || ''; } catch { /* private mode */ }
 if (translateSelect) {
   if (translateTarget && [...translateSelect.options].some((o) => o.value === translateTarget)) {
@@ -225,9 +227,6 @@ function applyTranslationMode() {
   });
   translateLines(todo);
 }
-
-let translateQueue = [];
-let translateBusy = false;
 
 async function translateLines(lines) {
   lines.forEach((l) => {
@@ -281,7 +280,12 @@ if (importPanel) {
       if (job.state === 'idle' || job.state === 'done') {
         clearInterval(timer);
         importPanel.style.display = 'none';
-        if (job.state === 'done') window.location.reload();
+        // Reload only if we are still on the importing screen; a finished note
+        // already shows its transcript, so never reload it (that looped).
+        if (job.state === 'done' && importPanel && importPanel.offsetParent !== null
+            && !transcriptEl.querySelector('.seg-line')) {
+          window.location.reload();
+        }
         return;
       }
       importPanel.style.display = '';

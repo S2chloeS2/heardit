@@ -42,7 +42,12 @@
     </div>
   </header>
 
-  {% if session.source != 'link' %}
+  {% if session.source == 'link' and not segments %}
+  <section class="card card-pad" id="import-panel" style="margin-bottom:20px;">
+    <div style="display:flex; align-items:center; gap:11px;"><span class="spinner"></span><span class="capture-status" id="import-message">{{ _('처리 중…') }}</span></div>
+    <div class="progress-shell"><div class="progress-bar" id="import-bar"></div></div>
+  </section>
+  {% elif session.source != 'link' %}
   <section class="card capture" style="margin-bottom:20px;">
     <div class="capture-row">
       <button type="button" class="btn btn-live" id="start-rec"><span class="dot-live" style="animation:none;"></span> {{ _('녹음 시작') }}</button>
@@ -56,11 +61,6 @@
     </div>
     <canvas class="waveform" id="waveform" aria-hidden="true"></canvas>
     <p class="hint" style="margin-top:10px;">{{ _('다른 사람의 말을 녹음할 때는 미리 알리고 동의를 받아주세요. 녹음은 이 기록을 삭제할 때까지 보관되어 문장을 눌러 다시 들을 수 있습니다.') }}</p>
-  </section>
-  {% else %}
-  <section class="card card-pad" id="import-panel" style="margin-bottom:20px; display:none;">
-    <div style="display:flex; align-items:center; gap:11px;"><span class="spinner"></span><span class="capture-status" id="import-message">{{ _('처리 중…') }}</span></div>
-    <div class="progress-shell"><div class="progress-bar" id="import-bar"></div></div>
   </section>
   {% endif %}
 

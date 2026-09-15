@@ -347,6 +347,8 @@ def handle_webhook(payload, signature):
             db.set_stripe_ids(user["id"], customer_id=obj["customer"],
                               subscription_id=obj.get("subscription") or user.get("stripe_subscription_id"))
         q = quote_from_metadata(meta, user)
+        if not q:
+            return "ignored (no usable metadata)"
         fulfil(user, q, "stripe", obj["id"])
         return f"fulfilled {q['item']['key']}"
 
@@ -392,8 +394,14 @@ def handle_webhook(payload, signature):
 
 def quote_from_metadata(meta, user):
     """Rebuild the quote the checkout was created with, from its metadata,
-    so fulfilment does not re-validate a code that has since expired."""
-    kind, spec = item(meta.get("item"))
+    so fulfilment does not re-validate a code that has since expired.
+    Returns None if the metadata predates this format (old test events)."""
+    if not meta.get("item"):
+        return None
+    try:
+        kind, spec = item(meta.get("item"))
+    except BillingError:
+        return None
     return {
         "kind": kind, "item": spec,
         "list_price": int(meta.get("list_price") or spec["price"]),
