@@ -100,6 +100,18 @@ _hits = collections.defaultdict(collections.deque)
 _hits_lock = threading.Lock()
 
 
+@app.after_request
+def security_headers(response):
+    """Browser-side hardening. HSTS only where HTTPS is guaranteed."""
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), payment=()")
+    if IS_PRODUCTION:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
+
 @app.before_request
 def throttle_api():
     if not request.path.startswith("/api/"):
