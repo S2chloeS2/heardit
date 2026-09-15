@@ -19,8 +19,10 @@ from datetime import datetime, timedelta, timezone
 import db
 import plans
 
-STRIPE_SECRET = os.getenv("STRIPE_SECRET_KEY")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+# Stripped: a trailing space or newline pasted into a dashboard field would
+# otherwise make every signature check fail.
+STRIPE_SECRET = (os.getenv("STRIPE_SECRET_KEY") or "").strip() or None
+STRIPE_WEBHOOK_SECRET = (os.getenv("STRIPE_WEBHOOK_SECRET") or "").strip() or None
 
 
 class BillingError(Exception):
@@ -279,21 +281,43 @@ class SignatureError(Exception):
 
 def handle_webhook(payload, signature):
     """Verify and apply one Stripe event. Returns a short description."""
+    import json as _json
     stripe = _stripe()
     try:
-        event = stripe.Webhook.construct_event(payload, signature, STRIPE_WEBHOOK_SECRET)
+        stripe.WebhookSignature.verify_header(
+            payload.decode("utf-8") if isinstance(payload, bytes) else payload,
+            signature, STRIPE_WEBHOOK_SECRET, tolerance=300,
+        )
     except Exception as exc:
         raise SignatureError(str(exc)) from exc
-    kind = event["type"]
-    obj = event["data"]["object"]
-    # "Thin" event payloads carry only ids; fetch the full object when the
-    # fields we need are missing.
-    if kind == "checkout.session.completed" and "metadata" not in obj:
-        obj = stripe.checkout.Session.retrieve(obj["id"])
-    elif kind == "invoice.paid" and "customer" not in obj:
-        obj = stripe.Invoice.retrieve(obj["id"])
-    elif kind.startswith("customer.subscription.") and "customer" not in obj:
-        obj = stripe.Subscription.retrieve(obj["id"])
+    event = _json.loads(payload)
+    kind = event.get("type", "")
+
+    # Two payload shapes: classic snapshot events carry the object under
+    # data.object; "thin" events from newer event destinations carry only
+    # related_object {id, type}. Fetch the object in the thin case.
+    obj = (event.get("data") or {}).get("object")
+    if obj is None:
+        rel = event.get("related_object") or {}
+        rid = rel.get("id")
+        if not rid:
+            return f"ignored (no object) {kind}"
+        if kind.startswith("checkout.session."):
+            obj = stripe.checkout.Session.retrieve(rid)
+        elif kind.startswith("invoice"):
+            obj = stripe.Invoice.retrieve(rid)
+        elif kind.startswith("customer.subscription."):
+            obj = stripe.Subscription.retrieve(rid)
+        else:
+            return f"ignored {kind}"
+    else:
+        # A snapshot can still be trimmed; fetch when the fields we need are missing.
+        if kind == "checkout.session.completed" and "metadata" not in obj:
+            obj = stripe.checkout.Session.retrieve(obj["id"])
+        elif kind == "invoice.paid" and "customer" not in obj:
+            obj = stripe.Invoice.retrieve(obj["id"])
+        elif kind.startswith("customer.subscription.") and "customer" not in obj:
+            obj = stripe.Subscription.retrieve(obj["id"])
 
     if kind == "checkout.session.completed":
         meta = obj.get("metadata") or {}

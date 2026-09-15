@@ -45,8 +45,8 @@ PLANS = {
     "student": {
         "name": "스튜던트",
         "minutes": 15 * 60,
-        "price": 14900,
-        "prices": {"krw": 14900, "usd": 999},
+        "price": 16900,
+        "prices": {"krw": 16900, "usd": 1299},
         "blurb": "매일 수업 듣는 학생",
         "features": ["프리미엄 노트 (빠짐없이) + 시험 요약", "노트 직접 수정",
                      "녹음 보관 · 문장 눌러 다시 듣기", "강의 자료 PDF 나란히 보기 · PDF 기반 챗",
@@ -55,8 +55,8 @@ PLANS = {
     "pro": {
         "name": "프로",
         "minutes": 30 * 60,
-        "price": 29900,
-        "prices": {"krw": 29900, "usd": 1999},
+        "price": 32900,
+        "prices": {"krw": 32900, "usd": 2499},
         "blurb": "회의가 잦은 팀과 연구자",
         "features": ["스튜던트의 모든 기능", "회의 화자 분리", "긴 파일 우선 처리",
                      "추가 크레딧 10% 할인"],
@@ -67,8 +67,8 @@ ORDER = ["free", "student", "pro"]
 
 # One-time credit packs. Never expire; used after the month's minutes.
 TOPUPS = {
-    "topup5": {"name": "5시간 크레딧", "minutes": 5 * 60, "price": 5900, "prices": {"krw": 5900, "usd": 399}},
-    "topup15": {"name": "15시간 크레딧", "minutes": 15 * 60, "price": 14900, "prices": {"krw": 14900, "usd": 999}},
+    "topup5": {"name": "5시간 크레딧", "minutes": 5 * 60, "price": 6900, "prices": {"krw": 6900, "usd": 499}},
+    "topup15": {"name": "15시간 크레딧", "minutes": 15 * 60, "price": 17900, "prices": {"krw": 17900, "usd": 1299}},
 }
 
 # What each tier unlocks. Checked server-side in the routes, not just hidden

@@ -551,4 +551,6 @@ TRANSLATIONS = {
 
     "{n} 할인": "{n} off",
 
+    "시간만 더합니다. 시험 요약·다시 듣기 같은 기능은 플랜을 따릅니다. 이번 달 시간을 다 쓰면 이어서 쓰이고, 만료되지 않습니다. 프로는 10% 할인.": "Hours only; features such as the exam sheet and replay follow your plan. Used after the month's hours are gone, never expires. 10% off on Pro.",
+
 }

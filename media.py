@@ -6,12 +6,14 @@ is split into chunks that are transcribed in order and stitched back together.
 
 import ipaddress
 import os
+import re
 import shutil
 import socket
 import subprocess
 import tempfile
 from urllib.parse import urlparse
 
+import httpx
 import yt_dlp
 
 # Comfortably inside Whisper's 25 MB limit at the bitrate we encode to.
@@ -108,8 +110,52 @@ def _friendly(exc):
     return text
 
 
+_TED_MEDIA = re.compile(r'https?://[^"\\ ]+?(?:manifest\.m3u8[^"\\ ]*|\.mp4)')
+
+
+def _is_ted(url):
+    host = (urlparse(url).hostname or "").lower()
+    return host == "ted.com" or host.endswith(".ted.com")
+
+
+def _ted_page(url):
+    """TED's own player data: title, speaker, duration and a media URL.
+
+    yt-dlp's TED extractor is broken and YouTube blocks hosted servers, so
+    the talk page itself is the source. It embeds an HLS manifest and an
+    mp4 fallback; ffmpeg can read either directly."""
+    assert_public_url(url)
+    try:
+        resp = httpx.get(url, headers={"User-Agent": "Mozilla/5.0"}, follow_redirects=True, timeout=30)
+        resp.raise_for_status()
+    except Exception as exc:
+        raise MediaError(f"Could not read that TED page: {exc}") from exc
+    html = resp.text
+    media = [m.replace("\\u0026", "&") for m in _TED_MEDIA.findall(html)]
+    hls = next((m for m in media if "manifest.m3u8" in m), None)
+    mp4 = next((m for m in media if m.endswith(".mp4")), None)
+    if not (hls or mp4):
+        raise MediaError("Could not find the talk's media on that TED page. Try the talk's YouTube link.")
+    title = re.search(r'"title":"([^"]{3,200})"', html)
+    speaker = re.search(r'"presenterDisplayName":"([^"]{1,120})"', html)
+    duration = re.search(r'"duration":(\d+)', html)
+    return {
+        "title": (title.group(1) if title else "TED talk").encode().decode("unicode_escape", "ignore"),
+        "uploader": speaker.group(1) if speaker else "TED",
+        "duration": int(duration.group(1)) if duration else 0,
+        "media_url": hls or mp4,
+    }
+
+
 def probe(url):
     """Read a URL's metadata without downloading it."""
+    if _is_ted(url):
+        info = _ted_page(url)
+        if info["duration"] > MAX_DURATION:
+            raise MediaError(f"That is {info['duration'] // 3600}h long. The limit is {MAX_DURATION // 3600}h.")
+        return {"title": info["title"], "duration": info["duration"], "uploader": info["uploader"],
+                "webpage_url": url, "via_youtube": False}
+
     target, via_search = resolve(url)
     if not via_search:
         assert_public_url(url)
@@ -149,6 +195,8 @@ def download_audio(url, workdir):
     """Download a URL's audio track as mp3. Returns the file path."""
     # Re-check: DNS could have changed between probe and download.
     assert_public_url(url)
+    if _is_ted(url):
+        return _download_ted(url, workdir)
     template = os.path.join(workdir, "audio.%(ext)s")
     opts = {
         **_ydl_common(),
@@ -172,6 +220,23 @@ def download_audio(url, workdir):
     path = os.path.join(workdir, "audio.mp3")
     if not os.path.exists(path):
         raise MediaError("The download finished but produced no audio file.")
+    return path
+
+
+def _download_ted(url, workdir):
+    """Pull the audio track of a TED talk straight from its HLS/mp4 URL."""
+    info = _ted_page(url)
+    path = os.path.join(workdir, "audio.mp3")
+    cmd = ["ffmpeg", "-v", "error", "-y", "-user_agent", "Mozilla/5.0",
+           "-i", info["media_url"], "-vn", "-acodec", "libmp3lame", "-b:a", "64k", path]
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, timeout=1800, check=True)
+    except subprocess.CalledProcessError as exc:
+        raise MediaError(f"Could not download the TED audio: {exc.stderr[-200:]}") from exc
+    except Exception as exc:
+        raise MediaError(f"Could not download the TED audio: {exc}") from exc
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        raise MediaError("The TED download produced no audio.")
     return path
 
 
