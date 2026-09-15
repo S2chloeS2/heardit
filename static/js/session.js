@@ -511,7 +511,7 @@ function addMessage(role, text) {
 
 // -------------------------------------------------------------------- export
 
-document.getElementById('export').addEventListener('click', () => {
+function exportMarkdown() {
   const lines = [`# ${titleInput.value}`, ''];
 
   const summary = summaryBody.textContent.trim();
@@ -538,7 +538,23 @@ document.getElementById('export').addEventListener('click', () => {
   a.download = `${titleInput.value.replace(/[^\w가-힣 -]/g, '') || 'session'}.md`;
   a.click();
   URL.revokeObjectURL(url);
-});
+}
+
+// Export menu
+const exportBtn = document.getElementById('export-btn');
+const exportMenu = document.getElementById('export-menu');
+if (exportBtn) {
+  exportBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = !exportMenu.hidden;
+    exportMenu.hidden = open;
+    exportBtn.setAttribute('aria-expanded', String(!open));
+  });
+  document.addEventListener('click', () => { exportMenu.hidden = true; exportBtn.setAttribute('aria-expanded', 'false'); });
+  exportMenu.addEventListener('click', (e) => e.stopPropagation());
+  document.getElementById('export-md').addEventListener('click', () => { exportMarkdown(); exportMenu.hidden = true; });
+  document.getElementById('export-print').addEventListener('click', () => { exportMenu.hidden = true; window.print(); });
+}
 
 // ------------------------------------------------------------------ speakers
 

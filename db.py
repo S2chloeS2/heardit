@@ -295,6 +295,23 @@ def delete_session(session_id):
         conn.execute("DELETE FROM sessions WHERE id=?", (session_id,))
 
 
+def sessions_with_old_audio(days):
+    """Sessions whose recording is older than `days` and still on disk."""
+    from datetime import datetime, timedelta, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT s.id FROM sessions s JOIN segments g ON g.session_id = s.id"
+            " WHERE s.created_at < ? AND g.audio_path IS NOT NULL", (cutoff,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def clear_segment_audio(session_id):
+    with connect() as conn:
+        conn.execute("UPDATE segments SET audio_path=NULL, audio_offset_ms=NULL WHERE session_id=?", (session_id,))
+
+
 def expired_sessions(days, plan_keys=("free",), exempt_emails=()):
     """Sessions older than `days` belonging to users on the given plans."""
     from datetime import datetime, timedelta, timezone

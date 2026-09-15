@@ -562,4 +562,10 @@ TRANSLATIONS = {
     '추가 크레딧은 스튜던트·프로 구독 중에만 살 수 있습니다.': 'Credit packs are available while subscribed to Student or Pro.',
     '구독 중인 분이 이번 달 시간을 다 썼을 때 시간만 더하는 팩입니다. 만료되지 않고, 프로는 10% 할인. 무료 계정은 구독 후에 살 수 있습니다.': 'For subscribers who run out of hours mid-month: hours only, never expire, 10% off on Pro. Free accounts can buy after subscribing.',
 
+    '마크다운 (.md)': 'Markdown (.md)',
+    'PDF로 저장 / 인쇄': 'Save as PDF / Print',
+    '워드 (.docx)': 'Word (.docx)',
+    '녹음 파일 (.mp3)': 'Recording (.mp3)',
+    '이 기록에는 저장된 녹음이 없습니다.': 'This note has no saved recording.',
+
 }

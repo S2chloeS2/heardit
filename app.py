@@ -11,6 +11,7 @@ review screen still has something in it tomorrow.
 
 import json
 import os
+import re
 import shutil
 import tempfile
 import threading
@@ -18,7 +19,7 @@ import time
 import traceback
 
 from dotenv import load_dotenv
-from flask import Flask, abort, jsonify, render_template, request, send_file, url_for
+from flask import Flask, abort, after_this_request, jsonify, render_template, request, send_file, url_for
 
 load_dotenv()
 
@@ -1020,6 +1021,122 @@ def api_attachment_file(session_id):
 
 # ----------------------------------------------------------- audio & translate
 
+def _md_to_docx_bytes(title, sections):
+    """Build a .docx from (heading, markdown) sections. Handles #/##/### heads,
+    bullet lists, and **bold**. Korean and any script work (it is just XML)."""
+    import io
+    import re as _re
+    from docx import Document
+    from docx.shared import Pt
+
+    doc = Document()
+    doc.add_heading(title or "Heardit note", level=0)
+    for section_title, md in sections:
+        if not (md or "").strip():
+            continue
+        doc.add_heading(section_title, level=1)
+        for raw in md.replace("\r", "").split("\n"):
+            line = raw.rstrip()
+            if not line.strip():
+                continue
+            m = _re.match(r"^(#{1,6})\s+(.*)$", line)
+            if m:
+                doc.add_heading(m.group(2), level=min(4, len(m.group(1)) + 1))
+                continue
+            bullet = _re.match(r"^(\s*)[-*]\s+(.*)$", line)
+            text, style = (bullet.group(2), "List Bullet") if bullet else (line.strip(), None)
+            para = doc.add_paragraph(style=style)
+            # **bold** runs
+            for i, part in enumerate(_re.split(r"\*\*(.+?)\*\*", text)):
+                run = para.add_run(part)
+                if i % 2 == 1:
+                    run.bold = True
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def _session_audio_files(session_id):
+    """Distinct recording files for a session, in transcript order."""
+    seen, files = set(), []
+    for seg in db.get_segments(session_id):
+        name = seg.get("audio_path")
+        if name and name not in seen:
+            seen.add(name)
+            path = os.path.join(AUDIO_DIR, str(session_id), name)
+            if os.path.isfile(path):
+                files.append(path)
+    return files
+
+
+@app.route("/api/sessions/<int:session_id>/note.docx")
+@auth.login_required
+def api_note_docx(session_id):
+    """The notes as an editable Word document."""
+    session = owned(session_id)
+    if not session:
+        abort(404)
+    if (denied := require("edit_notes")):
+        return denied
+    sections = [(i18n._("요약"), session.get("summary") or "")]
+    if session.get("exam_sheet"):
+        sections.append((i18n._("시험 요약"), session["exam_sheet"]))
+    sections.append((i18n._("스크립트"), db.get_transcript(session_id, with_speakers=True)))
+    data = _md_to_docx_bytes(session.get("title"), sections)
+    from flask import Response
+    from urllib.parse import quote
+    safe = re.sub(r"[^\w가-힣 -]", "", session.get("title") or "note").strip() or "note"
+    # Header values are latin-1; a Korean name must be percent-encoded, with an
+    # ASCII fallback for older clients.
+    disp = f"attachment; filename=note.docx; filename*=UTF-8''{quote(safe + '.docx')}"
+    return Response(data, mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    headers={"Content-Disposition": disp})
+
+
+@app.route("/api/sessions/<int:session_id>/recording")
+@auth.login_required
+def api_recording(session_id):
+    """Download the whole recording as one mp3. Live sessions are many clips,
+    so they are concatenated; link/upload sessions are already one file."""
+    session = owned(session_id)
+    if not session:
+        abort(404)
+    if not plans.can(auth.current_user(), "replay"):
+        return require("replay")
+    files = _session_audio_files(session_id)
+    if not files:
+        return fail(i18n._("이 기록에는 저장된 녹음이 없습니다."), 404)
+
+    safe = re.sub(r"[^\w가-힣 -]", "", session.get("title") or "recording").strip() or "recording"
+    if len(files) == 1 and files[0].lower().endswith(".mp3"):
+        return send_file(files[0], as_attachment=True, download_name=f"{safe}.mp3")
+
+    workdir = media.workspace()
+    out = os.path.join(workdir, "recording.mp3")
+    try:
+        listfile = os.path.join(workdir, "list.txt")
+        with open(listfile, "w") as fh:
+            for path in files:
+                fh.write(f"file '{path}'\n")
+        import subprocess
+        subprocess.run(
+            ["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", listfile,
+             "-acodec", "libmp3lame", "-b:a", "64k", out],
+            capture_output=True, timeout=600, check=True,
+        )
+        return send_file(out, as_attachment=True, download_name=f"{safe}.mp3",
+                         max_age=0, etag=False)
+    except Exception as exc:
+        app.logger.error("recording export failed: %s", traceback.format_exc())
+        return fail(str(exc), 502)
+    finally:
+        # send_file streams before this runs; schedule cleanup after response.
+        @after_this_request
+        def _cleanup(response):
+            shutil.rmtree(workdir, ignore_errors=True)
+            return response
+
+
 @app.route("/api/sessions/<int:session_id>/audio/<path:name>")
 @auth.login_required
 def api_audio(session_id, name):
@@ -1071,18 +1188,27 @@ def api_translate(session_id):
 
 # --------------------------------------------------------------- retention
 
+AUDIO_RETENTION_DAYS = int(os.getenv("AUDIO_RETENTION_DAYS", "90"))
+
+
 def _retention_sweep():
-    """Delete free-tier notes older than their retention window, daily."""
-    days = plans.FEATURES["free"]["retention_days"]
-    while days:
+    """Daily housekeeping to bound storage:
+    - free-tier notes older than their window are deleted whole;
+    - for everyone else, recordings older than AUDIO_RETENTION_DAYS are
+      removed but the notes and transcript stay (replay just stops)."""
+    free_days = plans.FEATURES["free"]["retention_days"]
+    while True:
         try:
-            for row in db.expired_sessions(days, exempt_emails=plans.OWNER_EMAILS):
-                # A lapsed paid plan is still 'student' in the row; only true
-                # free accounts are swept.
-                if plans.plan_key(row) != "free":
-                    continue
-                db.delete_session(row["id"])
-                drop_audio(row["id"])
+            if free_days:
+                for row in db.expired_sessions(free_days, exempt_emails=plans.OWNER_EMAILS):
+                    if plans.plan_key(row) != "free":
+                        continue
+                    db.delete_session(row["id"])
+                    drop_audio(row["id"])
+            if AUDIO_RETENTION_DAYS:
+                for row in db.sessions_with_old_audio(AUDIO_RETENTION_DAYS):
+                    drop_audio(row["id"])
+                    db.clear_segment_audio(row["id"])
         except Exception:
             app.logger.error("retention sweep failed: %s", traceback.format_exc())
         time.sleep(24 * 3600)

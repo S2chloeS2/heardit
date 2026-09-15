@@ -949,3 +949,21 @@ html, body { overflow-x: clip; }
 .admin-table .input { padding: 4px 8px; font-size: 12.5px; }
 .currency-switch { display: flex; justify-content: center; gap: 0; margin-top: 28px; }
 .currency-switch .seg-btn { text-decoration: none; }
+
+/* export menu */
+.menu-wrap { position: relative; display: inline-block; }
+.menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 6px; min-width: 200px; display: flex; flex-direction: column; }
+.menu[hidden] { display: none; }
+.menu-item { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 9px 12px; border-radius: 8px; font: inherit; font-size: 14px; color: var(--ink); cursor: pointer; text-decoration: none; }
+.menu-item:hover { background: var(--sunk); }
+.menu-item.is-locked { color: var(--ink-mute); }
+
+/* Print / Save as PDF: show only the note, cleanly */
+@media print {
+  .nav, .session-actions, .capture, #import-panel, .chat, aside, .toasts, .folder-pick, .player, .translate-pick, #notes-tabs, #edit-notes, .speaker-name, footer, .lang-switch { display: none !important; }
+  body { background: #fff; color: #000; }
+  .page, .grid-session, .stack { display: block !important; max-width: 100% !important; margin: 0 !important; }
+  .card { box-shadow: none !important; border: none !important; padding: 0 !important; margin: 0 0 18px !important; }
+  .seg-trans { color: #444 !important; }
+  a { color: #000 !important; text-decoration: none; }
+}

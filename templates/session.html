@@ -37,7 +37,23 @@
       {% else %}
       <a class="btn btn-ghost btn-sm is-locked" href="{{ url_for('pricing') }}" title="{{ _('스튜던트 플랜부터') }}">🔒 {{ _('자료 PDF') }}</a>
       {% endif %}
-      <button type="button" class="btn btn-ghost btn-sm" id="export">{{ _('내보내기') }}</button>
+      <div class="menu-wrap">
+        <button type="button" class="btn btn-ghost btn-sm" id="export-btn" aria-haspopup="true" aria-expanded="false">{{ _('내보내기') }} ▾</button>
+        <div class="menu" id="export-menu" hidden>
+          <button type="button" class="menu-item" id="export-md">{{ _('마크다운 (.md)') }}</button>
+          <button type="button" class="menu-item" id="export-print">{{ _('PDF로 저장 / 인쇄') }}</button>
+          {% if feat.edit_notes %}
+          <a class="menu-item" id="export-docx" href="{{ url_for('api_note_docx', session_id=session.id) }}">{{ _('워드 (.docx)') }}</a>
+          {% else %}
+          <a class="menu-item is-locked" href="{{ url_for('pricing') }}">🔒 {{ _('워드 (.docx)') }}</a>
+          {% endif %}
+          {% if feat.replay %}
+          <a class="menu-item" id="export-audio" href="{{ url_for('api_recording', session_id=session.id) }}">{{ _('녹음 파일 (.mp3)') }}</a>
+          {% else %}
+          <a class="menu-item is-locked" href="{{ url_for('pricing') }}">🔒 {{ _('녹음 파일 (.mp3)') }}</a>
+          {% endif %}
+        </div>
+      </div>
       <button type="button" class="btn btn-primary" id="make-summary">{{ _('요약 만들기') }}</button>
     </div>
   </header>
