@@ -252,7 +252,7 @@ def _expand_notes(notes, transcript, shape, system, target, model=None):
             },
         ],
         model=model or SUMMARY_MODEL,
-        max_tokens=12000,
+        max_tokens=16000,
     ))
 
 
@@ -357,21 +357,25 @@ def summarize(transcript, kind="lecture", lang=None, slides=None, model=None, pr
     chunks = _split_transcript(transcript)
     system = SUMMARY_SYSTEM.format(language=_language_rule(lang))
 
+    target = _target_length(len(transcript))
     if len(chunks) > 1:
+        # Part-by-part notes, then one pass that stitches them under single
+        # section headings WITHOUT shortening — the stitched result is checked
+        # against the target below and expanded if it fell short.
         partials = [
             _notes_for_chunk(chunk, i, len(chunks), kind, lang, model=model)
             for i, chunk in enumerate(chunks, start=1)
         ]
+        kept = sum(len(p) for p in partials)
         source = "\n\n---\n\n".join(
             f"PART {i}\n{p}" for i, p in enumerate(partials, start=1)
         )
-        total_notes = sum(len(p) for p in partials)
         task = (
-            "Merge these part-by-part notes into ONE set of notes for the whole "
-            "recording. Keep every concept, example, figure and action item; "
-            "combine only true duplicates; order by topic rather than by part. "
-            f"The merged notes must be at least {int(total_notes * 0.8):,} "
-            "characters: merging is reorganising, not shortening."
+            "Combine these part-by-part notes into ONE set of notes for the whole "
+            "recording, under a single set of the section headings below. This is "
+            "a reorganisation, not a summary: carry EVERY bullet across, merging "
+            "only exact duplicates. Do not shorten, generalise, or drop detail. "
+            f"The result must be at least {int(kept * 0.9):,} characters."
         )
         prompt = f"{task}\n\n{shape}\n\nNotes for each part, in order:\n{source}"
     else:
@@ -385,11 +389,15 @@ def summarize(transcript, kind="lecture", lang=None, slides=None, model=None, pr
     notes = _strip_fences(_chat(
         [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
         model=model,
-        max_tokens=12000,
+        max_tokens=16000,
     ))
-    if len(chunks) == 1 and premium:
-        target = _target_length(len(transcript))
-        if len(notes) < target * EXPAND_BELOW:
+    # Expand up to twice until the notes reach the target length — for long
+    # (merged) transcripts as well as short ones. This is what keeps a full
+    # lecture from collapsing into a page and a half.
+    if premium:
+        for _ in range(2):
+            if len(notes) >= target * EXPAND_BELOW:
+                break
             notes = _expand_notes(notes, transcript, shape, system, target, model=model)
     notes, trailing = _split_keyword_section(notes)
 
