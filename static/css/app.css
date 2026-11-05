@@ -333,8 +333,13 @@ a:hover { text-decoration: underline; }
 /* ------------------------------------------------------------------- chat */
 
 .chat { display: grid; grid-template-rows: 1fr auto; height: 100%; min-height: 320px; }
+/* Keep the AI chat visible while scrolling the transcript, on wide screens. */
+@media (min-width: 941px) {
+  .chat-aside { position: sticky; top: 76px; max-height: calc(100vh - 92px); overflow: hidden; display: flex; flex-direction: column; }
+  .chat-aside .chat { flex: 1; min-height: 0; }
+}
 .chat-log {
-  overflow-y: auto; max-height: 420px; padding: 4px 2px 14px;
+  overflow-y: auto; max-height: 420px; padding: 4px 2px 14px; flex: 1; min-height: 0;
   display: grid; gap: 13px; align-content: start;
 }
 .msg { display: grid; gap: 4px; }
@@ -966,4 +971,8 @@ html, body { overflow-x: clip; }
   .card { box-shadow: none !important; border: none !important; padding: 0 !important; margin: 0 0 18px !important; }
   .seg-trans { color: #444 !important; }
   a { color: #000 !important; text-decoration: none; }
+  /* Expand scroll boxes so the full content prints, not the visible slice. */
+  .transcript, .chat-log, .summary-body, #exam-body, .slides-panel { max-height: none !important; overflow: visible !important; height: auto !important; }
+  .chat-aside { position: static !important; max-height: none !important; overflow: visible !important; }
+  .seg-line { break-inside: avoid; }
 }
