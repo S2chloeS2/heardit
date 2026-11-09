@@ -568,4 +568,6 @@ TRANSLATIONS = {
     '녹음 파일 (.mp3)': 'Recording (.mp3)',
     '이 기록에는 저장된 녹음이 없습니다.': 'This note has no saved recording.',
 
+    '마지막 수정: 2026년 11월 9일': 'Last updated: 9 November 2026',
+
 }

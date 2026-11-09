@@ -1,47 +1,99 @@
 {% extends "base.html" %}
-{% block title %}이용약관 — Heardit{% endblock %}
+{% block title %}{{ _('이용약관') }} — Heardit{% endblock %}
 
 {% block body %}
 <div class="page page-narrow legal">
   <div class="page-head">
-    <h1>이용약관</h1>
-    <p>마지막 수정: 2026년 9월 5일 · 이 문서는 초안이며 서비스 출시 전 법률 검토가 필요합니다.</p>
+    <h1>{{ _('이용약관') }}</h1>
+    <p>{{ _('마지막 수정: 2026년 11월 9일') }}</p>
   </div>
 
   <div class="card card-pad">
+  {% if lang == 'ko' %}
     <h3>1. 서비스</h3>
-    <p>Heardit는 강의와 회의의 소리를 텍스트로 바꾸고, 요약·키워드·질의응답을 제공하는 도구입니다.
-       AI가 만든 결과에는 오류가 있을 수 있으며, 중요한 결정이나 시험 준비에는 원본 확인을 권합니다.</p>
+    <p>Heardit는 강의와 회의의 소리를 텍스트로 바꾸고 요약·키워드·질의응답·번역을 제공하는 도구입니다. AI가 만든 결과에는 오류가 있을 수 있으며, 중요한 결정이나 시험 준비에는 원본 확인을 권합니다.</p>
 
     <h3>2. 계정</h3>
     <p>구글 계정으로 가입합니다. 계정은 본인만 사용해야 하며, 계정에서 일어나는 활동은 회원님의 책임입니다.</p>
 
     <h3>3. 요금과 사용량</h3>
     <ul>
-      <li>무료 플랜은 월 5시간까지 전사할 수 있습니다. 유료 플랜은 계정 페이지의 안내를 따릅니다.</li>
-      <li>사용량은 전사한 오디오 길이로 계산하며 매월 1일에 초기화됩니다.</li>
-      <li>유료 플랜은 언제든 해지할 수 있고, 해지 시 남은 기간까지 이용할 수 있습니다.</li>
+      <li>무료 플랜은 월 2시간까지 전사할 수 있습니다. 유료 플랜(스튜던트·프로)과 추가 크레딧의 가격은 요금 페이지에 표시됩니다.</li>
+      <li>사용량은 전사한 오디오 길이로 계산하며 매월 1일에 초기화됩니다. 추가 크레딧은 만료되지 않습니다.</li>
+      <li>구독은 매월 또는 매년 자동 갱신됩니다. 결제대행사는 Stripe이며 카드 정보는 저희 서버에 저장되지 않습니다.</li>
     </ul>
 
-    <h3>4. 금지되는 사용</h3>
+    <h3>4. 해지와 환불</h3>
+    <ul>
+      <li>구독은 계정 페이지에서 언제든 해지할 수 있습니다. 해지하면 <strong>이미 결제한 기간이 끝날 때까지 이용</strong>할 수 있고, 그 뒤 무료로 전환되며 더 이상 청구되지 않습니다.</li>
+      <li>추가 크레딧은 <strong>사용하지 않았다면 구매 후 7일 이내</strong>에 환불받을 수 있습니다. 이미 사용한 크레딧은 환불되지 않습니다.</li>
+      <li>구독 기간 중 이미 사용한 서비스에 대해서는 환불되지 않습니다. 결제 오류나 중복 결제는 문의 주시면 처리합니다.</li>
+    </ul>
+
+    <h3>5. 금지되는 사용</h3>
     <ul>
       <li>상대방 동의 없는 녹음 등 <strong>법을 위반하는 녹음</strong></li>
       <li>저작권이 있는 콘텐츠를 권리자 허락 없이 대량 전사·배포하는 행위</li>
-      <li>자동화된 수단으로 서비스를 과도하게 호출하는 행위</li>
+      <li>자동화된 수단으로 서비스를 과도하게 호출하거나 우회하는 행위</li>
     </ul>
 
-    <h3>5. 콘텐츠의 소유</h3>
+    <h3>6. 콘텐츠의 소유</h3>
     <p>회원님이 만든 기록·요약·대화는 회원님의 것입니다. 저희는 서비스 제공에 필요한 범위에서만 처리합니다.</p>
 
-    <h3>6. 책임의 한계</h3>
-    <p>서비스는 있는 그대로 제공됩니다. 전사·요약의 정확성, 서비스 중단, 데이터 손실에 대해 법이 허용하는 범위에서 책임을 지지 않습니다.
-       정기 백업을 하지만 <strong>중요한 기록은 내보내기로 따로 보관</strong>해 주세요.</p>
+    <h3>7. 책임의 한계</h3>
+    <p>서비스는 있는 그대로 제공됩니다. 전사·요약의 정확성, 서비스 중단, 데이터 손실에 대해 법이 허용하는 범위에서 책임을 지지 않습니다. 정기 백업을 하지만 <strong>중요한 기록은 내보내기로 따로 보관</strong>해 주세요.</p>
 
-    <h3>7. 변경</h3>
+    <h3>8. 준거법</h3>
+    <p>본 약관은 대한민국 법률에 따릅니다. 분쟁은 관련 법이 정한 관할 법원에서 다룹니다.</p>
+
+    <h3>9. 변경</h3>
     <p>약관이 바뀌면 서비스 안에서 알립니다. 변경 후 계속 사용하면 동의한 것으로 봅니다.</p>
 
-    <h3>8. 연락처</h3>
+    <h3>10. 연락처</h3>
     <p><a href="/contact">문의 페이지</a> 또는 <a href="mailto:hello@hearditai.com">hello@hearditai.com</a></p>
+  {% else %}
+    <h3>1. The service</h3>
+    <p>Heardit turns the sound of lectures and meetings into text and provides summaries, keywords, Q&amp;A and translation. AI output can contain errors; check the original for important decisions or exam preparation.</p>
+
+    <h3>2. Account</h3>
+    <p>You sign up with a Google account. Your account is for your use only, and you are responsible for activity under it.</p>
+
+    <h3>3. Plans and usage</h3>
+    <ul>
+      <li>The free plan transcribes up to 2 hours per month. Paid plans (Student, Pro) and credit packs are priced on the pricing page.</li>
+      <li>Usage is measured as audio transcribed and resets on the 1st of each month. Credit packs do not expire.</li>
+      <li>Subscriptions renew automatically each month or year. Payments are processed by Stripe; card details are never stored on our servers.</li>
+    </ul>
+
+    <h3>4. Cancellation and refunds</h3>
+    <ul>
+      <li>Cancel a subscription any time from the account page. You keep access <strong>until the end of the period you already paid for</strong>, then drop to Free with no further charge.</li>
+      <li>Credit packs are refundable <strong>within 7 days of purchase if unused</strong>. Used credit is not refundable.</li>
+      <li>Service already used within a subscription period is not refundable. Contact us for billing errors or duplicate charges.</li>
+    </ul>
+
+    <h3>5. Prohibited use</h3>
+    <ul>
+      <li>Recording that <strong>breaks the law</strong>, such as recording without required consent.</li>
+      <li>Transcribing or distributing copyrighted content at scale without the rights holder's permission.</li>
+      <li>Calling the service excessively or circumventing it through automated means.</li>
+    </ul>
+
+    <h3>6. Ownership of content</h3>
+    <p>The notes, summaries and conversations you create are yours. We process them only as needed to provide the service.</p>
+
+    <h3>7. Limitation of liability</h3>
+    <p>The service is provided as is. To the extent the law allows, we are not liable for the accuracy of transcription or summaries, service interruptions, or data loss. We back up regularly, but please <strong>keep important notes separately by exporting them</strong>.</p>
+
+    <h3>8. Governing law</h3>
+    <p>These terms are governed by the laws of the Republic of Korea, with disputes heard in the courts designated by applicable law.</p>
+
+    <h3>9. Changes</h3>
+    <p>If these terms change, we will say so in the service. Continued use after a change means you accept it.</p>
+
+    <h3>10. Contact</h3>
+    <p><a href="/contact">contact page</a> or <a href="mailto:hello@hearditai.com">hello@hearditai.com</a></p>
+  {% endif %}
   </div>
 </div>
 {% endblock %}
