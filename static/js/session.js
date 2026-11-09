@@ -194,6 +194,25 @@ if (audioEl) {
 
 // A second line under each sentence, in the language chosen here. Cached on
 // the server per line, so turning it off and on again costs nothing.
+// Safety net: every few seconds, find any line not yet translated into the
+// chosen language and queue it. With the per-request timeout and retry, this
+// guarantees every line is eventually translated — nothing stays on "…".
+let translateSweepTimer = null;
+function startTranslateSweep() {
+  if (translateSweepTimer) return;
+  translateSweepTimer = setInterval(() => {
+    if (!translateTarget) return;
+    const missing = [...transcriptEl.querySelectorAll('.seg-line[data-id]')].filter((l) => {
+      const t = l.querySelector('.seg-trans');
+      return t.dataset.lang !== translateTarget || !t.textContent || t.textContent === '…';
+    });
+    if (missing.length) translateLines(missing);
+  }, 6000);
+}
+function stopTranslateSweep() {
+  if (translateSweepTimer) { clearInterval(translateSweepTimer); translateSweepTimer = null; }
+}
+
 const translateSelect = document.getElementById('translate-select');
 let translateTarget = '';
 let translateQueue = [];
@@ -209,8 +228,10 @@ if (translateSelect) {
     translateTarget = translateSelect.value;
     try { localStorage.setItem('translateTarget', translateTarget); } catch { /* ignore */ }
     applyTranslationMode();
+    if (translateTarget) startTranslateSweep(); else stopTranslateSweep();
   });
   applyTranslationMode();
+  if (translateTarget) startTranslateSweep();
 }
 
 function applyTranslationMode() {
