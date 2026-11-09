@@ -158,14 +158,27 @@ def now():
 
 
 def connect():
-    conn = sqlite3.connect(DB_PATH)
+    # A longer busy timeout keeps concurrent writers from failing immediately
+    # when the DB is briefly locked (several threads, one worker).
+    conn = sqlite3.connect(DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # synchronous=NORMAL is safe under WAL and avoids an fsync on every commit,
+    # which is the slow part on Render's network-attached disk.
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute("PRAGMA busy_timeout = 15000")
     return conn
 
 
 def init():
     with connect() as conn:
+        # WAL mode makes writes far faster on a network-attached disk (no full
+        # fsync per transaction) and lets reads run while a write is in flight.
+        # It is stored in the database file, so this runs once and sticks.
+        try:
+            conn.execute("PRAGMA journal_mode = WAL")
+        except Exception:
+            pass
         conn.executescript(SCHEMA)
         # Older databases predate the diarization columns; add what is missing.
         cols = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)")}
