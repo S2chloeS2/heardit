@@ -216,7 +216,8 @@ if (translateSelect) {
 function applyTranslationMode() {
   const lines = [...transcriptEl.querySelectorAll('.seg-line[data-id]')];
   if (!translateTarget) {
-    lines.forEach((l) => { l.querySelector('.seg-trans').hidden = true; });
+    translateQueue = [];
+    lines.forEach((l) => { const t = l.querySelector('.seg-trans'); t.hidden = true; t.classList.remove('is-loading'); });
     return;
   }
   const todo = [];
@@ -228,43 +229,62 @@ function applyTranslationMode() {
   translateLines(todo);
 }
 
-async function translateLines(lines) {
+let translateRetry = null;
+
+function translateLines(lines) {
   lines.forEach((l) => {
     const t = l.querySelector('.seg-trans');
+    if (t.dataset.lang === translateTarget && t.textContent) return; // already done
     t.hidden = false;
     t.classList.add('is-loading');
-    if (t.dataset.lang !== translateTarget) t.textContent = '…';
+    t.textContent = '…';
+    if (!translateQueue.includes(l)) translateQueue.push(l);
   });
-  translateQueue.push(...lines);
-  if (translateBusy) return;
+  drainTranslateQueue();
+}
+
+async function drainTranslateQueue() {
+  if (translateBusy || !translateTarget) return;
   translateBusy = true;
   try {
     while (translateQueue.length && translateTarget) {
-      const batch = translateQueue.splice(0, 25);
       const target = translateTarget;
-      const ids = batch.map((l) => l.dataset.id);
+      const batch = translateQueue.slice(0, 25);
+      const ids = batch.map((l) => l.dataset.id).filter(Boolean);
+      let data;
       try {
-        const data = await api(`/api/sessions/${sessionId}/translate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        // Retry transient failures (e.g. a brief redeploy) before giving up.
+        data = await withRetries(() => api(`/api/sessions/${sessionId}/translate`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ids, target }),
-        });
-        batch.forEach((l) => {
-          const t = l.querySelector('.seg-trans');
-          const text = data.translations[l.dataset.id];
-          t.classList.remove('is-loading');
-          if (text) { t.textContent = text; t.dataset.lang = target; }
-          else { t.textContent = ''; t.hidden = true; }
-        });
+        }), 2);
       } catch (err) {
-        batch.forEach((l) => { const t = l.querySelector('.seg-trans'); t.classList.remove('is-loading'); t.textContent = ''; t.hidden = true; });
-        toast(err.message, 'bad');
+        // Leave the lines queued and try again shortly; never discard them.
+        if (!translateRetry) translateRetry = setTimeout(() => { translateRetry = null; drainTranslateQueue(); }, 4000);
         break;
       }
+      if (target !== translateTarget) break; // user switched language mid-flight
+      translateQueue.splice(0, batch.length);
+      batch.forEach((l) => {
+        const t = l.querySelector('.seg-trans');
+        const text = data.translations[l.dataset.id];
+        t.classList.remove('is-loading');
+        if (text) { t.textContent = text; t.dataset.lang = target; t.hidden = false; }
+        else { t.textContent = ''; t.hidden = true; }
+      });
     }
   } finally {
     translateBusy = false;
-    translateQueue = [];
+  }
+}
+
+async function withRetries(fn, tries) {
+  for (let i = 0; ; i++) {
+    try { return await fn(); }
+    catch (err) {
+      if (i >= tries) throw err;
+      await new Promise((r) => setTimeout(r, 800 * (i + 1)));
+    }
   }
 }
 
