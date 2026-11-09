@@ -28,3 +28,9 @@ backups/
 # Kept recordings (per-session folders)
 audio/
 backups/
+
+# SQLite WAL sidecar files
+heardit.db-wal
+heardit.db-shm
+*.db-wal
+*.db-shm

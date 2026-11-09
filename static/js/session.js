@@ -243,35 +243,45 @@ function translateLines(lines) {
   drainTranslateQueue();
 }
 
+const TRANSLATE_CONCURRENCY = 3;
+
 async function drainTranslateQueue() {
   if (translateBusy || !translateTarget) return;
   translateBusy = true;
+  let hadError = false;
   try {
-    while (translateQueue.length && translateTarget) {
+    // Run several batches at once so a long transcript fills in a few seconds
+    // instead of one 25-line batch at a time.
+    while (translateQueue.length && translateTarget && !hadError) {
       const target = translateTarget;
-      const batch = translateQueue.slice(0, 25);
-      const ids = batch.map((l) => l.dataset.id).filter(Boolean);
-      let data;
-      try {
-        // Retry transient failures (e.g. a brief redeploy) before giving up.
-        data = await withRetries(() => api(`/api/sessions/${sessionId}/translate`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids, target }),
-        }), 2);
-      } catch (err) {
-        // Leave the lines queued and try again shortly; never discard them.
-        if (!translateRetry) translateRetry = setTimeout(() => { translateRetry = null; drainTranslateQueue(); }, 4000);
-        break;
+      const batches = [];
+      for (let i = 0; i < TRANSLATE_CONCURRENCY && translateQueue.length; i++) {
+        batches.push(translateQueue.splice(0, 25));
       }
-      if (target !== translateTarget) break; // user switched language mid-flight
-      translateQueue.splice(0, batch.length);
-      batch.forEach((l) => {
-        const t = l.querySelector('.seg-trans');
-        const text = data.translations[l.dataset.id];
-        t.classList.remove('is-loading');
-        if (text) { t.textContent = text; t.dataset.lang = target; t.hidden = false; }
-        else { t.textContent = ''; t.hidden = true; }
-      });
+      await Promise.all(batches.map(async (batch) => {
+        const ids = batch.map((l) => l.dataset.id).filter(Boolean);
+        let data;
+        try {
+          data = await withRetries(() => api(`/api/sessions/${sessionId}/translate`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids, target }),
+          }), 2);
+        } catch (err) {
+          // Put this batch back and stop scheduling more; retry shortly.
+          translateQueue.unshift(...batch);
+          hadError = true;
+          if (!translateRetry) translateRetry = setTimeout(() => { translateRetry = null; drainTranslateQueue(); }, 4000);
+          return;
+        }
+        if (target !== translateTarget) return;
+        batch.forEach((l) => {
+          const t = l.querySelector('.seg-trans');
+          const text = data.translations[l.dataset.id];
+          t.classList.remove('is-loading');
+          if (text) { t.textContent = text; t.dataset.lang = target; t.hidden = false; }
+          else { t.textContent = ''; t.hidden = true; }
+        });
+      }));
     }
   } finally {
     translateBusy = false;
