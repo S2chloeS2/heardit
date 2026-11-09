@@ -46,7 +46,7 @@ app.config.update(
 
 # Reject oversized bodies before Werkzeug reads them into memory or onto disk.
 # Long recordings arrive as uploads, so this is generous — but not unbounded.
-app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_UPLOAD_MB", "500")) * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_UPLOAD_MB", "150")) * 1024 * 1024
 
 # Recordings are kept so a line of the transcript can be played back. They
 # live next to the database unless AUDIO_DIR points elsewhere (on Render, the
