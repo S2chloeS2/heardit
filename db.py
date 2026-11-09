@@ -418,6 +418,19 @@ def segments_needing_translation(session_id, ids, lang):
         return [dict(r) for r in rows]
 
 
+def segment_texts(session_id, ids):
+    """{id: text} for the given segment ids of a session."""
+    if not ids:
+        return {}
+    marks = ",".join("?" * len(ids))
+    with connect() as conn:
+        rows = conn.execute(
+            f"SELECT id, text FROM segments WHERE session_id=? AND id IN ({marks})",
+            (session_id, *ids),
+        ).fetchall()
+        return {r["id"]: r["text"] for r in rows}
+
+
 def cached_translations(session_id, ids, lang):
     if not ids:
         return {}

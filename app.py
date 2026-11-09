@@ -1186,23 +1186,49 @@ def api_translate(session_id):
     target = (body.get("target") or "").lower()[:2]
     if target not in ai.LANGUAGE_NAMES:
         return fail(i18n._("Unsupported language."))
+    # Two shapes. `groups`: lists of segment ids that form complete sentences;
+    # each group is joined and translated as a whole, the translation stored on
+    # the group's LAST id and the earlier ids stored empty (they are shown as
+    # part of the sentence below). `ids`: the old per-line shape, still accepted.
+    groups = body.get("groups")
+    if groups is None and body.get("ids") is not None:
+        groups = [[i] for i in body["ids"]]
     try:
-        ids = [int(i) for i in (body.get("ids") or [])][:60]
+        groups = [[int(i) for i in g] for g in (groups or [])][:60]
     except (TypeError, ValueError):
         return fail(i18n._("Bad segment ids."))
-    if not ids:
+    groups = [g for g in groups if g]
+    if not groups:
         return jsonify({"translations": {}})
 
-    result = db.cached_translations(session_id, ids, target)
-    todo = db.segments_needing_translation(session_id, ids, target)
-    if todo:
+    all_ids = [i for g in groups for i in g]
+    cached = db.cached_translations(session_id, all_ids, target)
+    texts = db.segment_texts(session_id, all_ids)
+
+    result = dict(cached)
+    todo_groups, todo_texts = [], []
+    for g in groups:
+        if g[-1] in cached:          # whole sentence already translated
+            continue
+        joined = " ".join(texts.get(i, "") for i in g).strip()
+        if not joined:
+            continue
+        todo_groups.append(g)
+        todo_texts.append(joined)
+
+    if todo_texts:
         try:
-            fresh = ai.translate_segments({s["id"]: s["text"] for s in todo}, target)
+            fresh = ai.translate_texts(todo_texts, target)
         except Exception as exc:
             app.logger.error("translate failed: %s", traceback.format_exc())
             return fail(str(exc), 502)
-        db.save_translations(session_id, target, fresh)
-        result.update(fresh)
+        to_save = {}
+        for g, tr in zip(todo_groups, fresh):
+            for i in g[:-1]:
+                to_save[i] = ""       # mid-sentence lines: shown under the last
+            to_save[g[-1]] = tr
+        db.save_translations(session_id, target, to_save)
+        result.update(to_save)
     return jsonify({"translations": {str(k): v for k, v in result.items()}})
 
 

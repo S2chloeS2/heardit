@@ -722,6 +722,44 @@ def answer_folder(question, corpus, history=None):
 
 # --------------------------------------------------------------- translation
 
+def translate_texts(texts, target):
+    """Translate a list of text blocks into `target`. Returns a list aligned to
+    the input. Used for sentence groups, where each block is several joined
+    transcript lines forming complete sentences."""
+    if not texts:
+        return []
+    numbered = "\n".join(f"[{i}] {t}" for i, t in enumerate(texts))
+    raw = _chat(
+        [
+            {
+                "role": "system",
+                "content": (
+                    f"Translate each numbered block into {language_name(target)}. "
+                    "Each block is one or more complete sentences; translate it "
+                    "naturally and faithfully as a whole. Do not merge, drop or "
+                    "reorder blocks. Return JSON: "
+                    '{"translations": {"<number>": "<translation>", ...}} with '
+                    "every number present."
+                ),
+            },
+            {"role": "user", "content": numbered},
+        ],
+        response_format={"type": "json_object"},
+        max_tokens=4000,
+        temperature=0.2,
+    )
+    data = json.loads(raw).get("translations") or {}
+    out = [""] * len(texts)
+    for key, value in data.items():
+        try:
+            i = int(str(key).strip("[] "))
+        except ValueError:
+            continue
+        if 0 <= i < len(texts) and isinstance(value, str):
+            out[i] = value.strip()
+    return out
+
+
 def translate_segments(segments, target):
     """Translate {id: text} pairs into `target`. Returns {id: translation}.
 

@@ -107,7 +107,7 @@ function appendSegment(text, id, audio) {
   line.querySelector('.seg-text').textContent = text;
   transcriptEl.appendChild(line);
   transcriptEl.scrollTop = transcriptEl.scrollHeight;
-  if (translateTarget && id) translateLines([line]);
+  if (translateTarget && id) ensureTranslated();
 }
 
 // ---------------------------------------------------------------- playback
@@ -192,31 +192,25 @@ if (audioEl) {
 
 // ------------------------------------------------------------- translation
 
-// A second line under each sentence, in the language chosen here. Cached on
-// the server per line, so turning it off and on again costs nothing.
-// Safety net: every few seconds, find any line not yet translated into the
-// chosen language and queue it. With the per-request timeout and retry, this
-// guarantees every line is eventually translated — nothing stays on "…".
-let translateSweepTimer = null;
-function startTranslateSweep() {
-  if (translateSweepTimer) return;
-  translateSweepTimer = setInterval(() => {
-    if (!translateTarget) return;
-    const missing = [...transcriptEl.querySelectorAll('.seg-line[data-id]')].filter((l) => {
-      const t = l.querySelector('.seg-trans');
-      return t.dataset.lang !== translateTarget || !t.textContent || t.textContent === '…';
-    });
-    if (missing.length) translateLines(missing);
-  }, 6000);
-}
-function stopTranslateSweep() {
-  if (translateSweepTimer) { clearInterval(translateSweepTimer); translateSweepTimer = null; }
-}
+// ------------------------------------------------------------- translation
+//
+// A second line under each sentence, in the chosen language. Consecutive lines
+// are grouped into complete sentences (a group ends at sentence punctuation),
+// each group is translated as a whole, and the translation is shown under the
+// group's LAST line — so a 6-second clip that cuts a sentence in half is joined
+// with the next lines before translating. Cached on the server, so reopening is
+// instant, and changing language re-translates the whole transcript.
 
 const translateSelect = document.getElementById('translate-select');
 let translateTarget = '';
-let translateQueue = [];
+let translateQueue = [];        // array of units (each unit = array of line els)
 let translateBusy = false;
+let translateRetry = null;
+let translateSweepTimer = null;
+const SENTENCE_END = /[.?!\u3002\u2026\uFF01\uFF1F][)"'\u201d\u2019\]]?\s*$/;
+const UNITS_PER_REQUEST = 12;
+const TRANSLATE_CONCURRENCY = 2;
+
 try { translateTarget = localStorage.getItem('translateTarget') || ''; } catch { /* private mode */ }
 if (translateSelect) {
   if (translateTarget && [...translateSelect.options].some((o) => o.value === translateTarget)) {
@@ -227,6 +221,7 @@ if (translateSelect) {
   translateSelect.addEventListener('change', () => {
     translateTarget = translateSelect.value;
     try { localStorage.setItem('translateTarget', translateTarget); } catch { /* ignore */ }
+    translateQueue = [];
     applyTranslationMode();
     if (translateTarget) startTranslateSweep(); else stopTranslateSweep();
   });
@@ -234,71 +229,92 @@ if (translateSelect) {
   if (translateTarget) startTranslateSweep();
 }
 
+function transcriptLines() {
+  return [...transcriptEl.querySelectorAll('.seg-line[data-id]')];
+}
+function isRecording() {
+  try { return !!(capture && capture.isRecording); } catch { return false; }
+}
+
+// Group consecutive lines into sentence units. A unit closes at a line ending
+// in sentence punctuation; a trailing open unit is included only when `final`
+// (recording stopped or a static transcript), so a half-spoken live sentence
+// waits for the rest before being translated.
+function buildUnits(lines, final) {
+  const units = [];
+  let cur = [];
+  for (const l of lines) {
+    cur.push(l);
+    const txt = (l.querySelector('.seg-text').textContent || '').trim();
+    if (SENTENCE_END.test(txt)) { units.push(cur); cur = []; }
+  }
+  if (cur.length && final) units.push(cur);
+  return units;
+}
+
 function applyTranslationMode() {
-  const lines = [...transcriptEl.querySelectorAll('.seg-line[data-id]')];
   if (!translateTarget) {
     translateQueue = [];
-    lines.forEach((l) => { const t = l.querySelector('.seg-trans'); t.hidden = true; t.classList.remove('is-loading'); });
+    transcriptLines().forEach((l) => { const t = l.querySelector('.seg-trans'); t.hidden = true; t.classList.remove('is-loading'); });
     return;
   }
-  const todo = [];
-  lines.forEach((l) => {
+  // Show any cached translations for this language right away; queue the rest.
+  transcriptLines().forEach((l) => {
     const t = l.querySelector('.seg-trans');
-    if (t.dataset.lang === translateTarget && t.textContent) t.hidden = false;
-    else todo.push(l);
+    if (t.dataset.lang === translateTarget) { t.hidden = !t.textContent; t.classList.remove('is-loading'); }
   });
-  translateLines(todo);
+  ensureTranslated();
 }
 
-let translateRetry = null;
-
-function translateLines(lines) {
-  lines.forEach((l) => {
-    const t = l.querySelector('.seg-trans');
-    if (t.dataset.lang === translateTarget && t.textContent) return; // already done
-    t.hidden = false;
-    t.classList.add('is-loading');
-    t.textContent = '…';
-    if (!translateQueue.includes(l)) translateQueue.push(l);
-  });
+// Queue every sentence unit whose translation into the current language is not
+// yet shown. Idempotent: safe to call on each new clip and from the sweep.
+function ensureTranslated() {
+  if (!translateTarget) return;
+  const units = buildUnits(transcriptLines(), !isRecording());
+  for (const unit of units) {
+    const last = unit[unit.length - 1];
+    const lt = last.querySelector('.seg-trans');
+    const done = lt.dataset.lang === translateTarget && lt.textContent;
+    if (done) continue;
+    // Mark the unit: the last line shows a loading placeholder, the rest hide.
+    unit.forEach((l, i) => {
+      const t = l.querySelector('.seg-trans');
+      if (i === unit.length - 1) {
+        t.hidden = false; t.classList.add('is-loading');
+        if (t.dataset.lang !== translateTarget) t.textContent = '\u2026';
+      } else {
+        t.hidden = true;
+      }
+    });
+    if (!translateQueue.some((u) => u[u.length - 1] === last)) translateQueue.push(unit);
+  }
   drainTranslateQueue();
 }
-
-const TRANSLATE_CONCURRENCY = 3;
 
 async function drainTranslateQueue() {
   if (translateBusy || !translateTarget) return;
   translateBusy = true;
   let hadError = false;
   try {
-    // Run several batches at once so a long transcript fills in a few seconds
-    // instead of one 25-line batch at a time.
     while (translateQueue.length && translateTarget && !hadError) {
       const target = translateTarget;
-      const batches = [];
-      for (let i = 0; i < TRANSLATE_CONCURRENCY && translateQueue.length; i++) {
-        batches.push(translateQueue.splice(0, 25));
+      const reqs = [];
+      for (let c = 0; c < TRANSLATE_CONCURRENCY && translateQueue.length; c++) {
+        reqs.push(translateQueue.splice(0, UNITS_PER_REQUEST));
       }
-      await Promise.all(batches.map(async (batch) => {
-        const ids = batch.map((l) => l.dataset.id).filter(Boolean);
+      await Promise.all(reqs.map(async (units) => {
+        const groups = units.map((u) => u.map((l) => l.dataset.id).filter(Boolean));
         let data;
         try {
-          data = await withRetries(() => translateFetch(ids, target), 2);
+          data = await withRetries(() => translateFetch(groups, target), 2);
         } catch (err) {
-          // Put this batch back and stop scheduling more; retry shortly.
-          translateQueue.unshift(...batch);
+          translateQueue.unshift(...units); // never drop a unit
           hadError = true;
           if (!translateRetry) translateRetry = setTimeout(() => { translateRetry = null; drainTranslateQueue(); }, 4000);
           return;
         }
         if (target !== translateTarget) return;
-        batch.forEach((l) => {
-          const t = l.querySelector('.seg-trans');
-          const text = data.translations[l.dataset.id];
-          t.classList.remove('is-loading');
-          if (text) { t.textContent = text; t.dataset.lang = target; t.hidden = false; }
-          else { t.textContent = ''; t.hidden = true; }
-        });
+        units.forEach((unit) => applyUnit(unit, data.translations, target));
       }));
     }
   } finally {
@@ -306,16 +322,38 @@ async function drainTranslateQueue() {
   }
 }
 
-// A translate request with a hard time limit: a server that hangs (no reply,
-// no error) must not freeze the whole queue. On timeout it aborts and throws,
-// which the retry/requeue logic then handles.
-async function translateFetch(ids, target, ms = 20000) {
+function applyUnit(unit, translations, target) {
+  const last = unit[unit.length - 1];
+  unit.forEach((l) => {
+    const t = l.querySelector('.seg-trans');
+    t.classList.remove('is-loading');
+    if (l === last) {
+      const tr = translations[l.dataset.id];
+      if (tr) { t.textContent = tr; t.dataset.lang = target; t.hidden = false; }
+      else { t.textContent = ''; t.dataset.lang = target; t.hidden = true; }
+    } else {
+      t.textContent = ''; t.dataset.lang = target; t.hidden = true; // part of the sentence shown below
+    }
+  });
+}
+
+function startTranslateSweep() {
+  if (translateSweepTimer) return;
+  translateSweepTimer = setInterval(() => { if (translateTarget) ensureTranslated(); }, 6000);
+}
+function stopTranslateSweep() {
+  if (translateSweepTimer) { clearInterval(translateSweepTimer); translateSweepTimer = null; }
+}
+
+// Hard time limit: a server that hangs (no reply, no error) must not freeze the
+// queue. On timeout it aborts and throws, which the retry/requeue path handles.
+async function translateFetch(groups, target, ms = 20000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ms);
   try {
     return await api(`/api/sessions/${sessionId}/translate`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids, target }), signal: ctrl.signal,
+      body: JSON.stringify({ groups, target }), signal: ctrl.signal,
     });
   } finally {
     clearTimeout(timer);
@@ -325,10 +363,7 @@ async function translateFetch(ids, target, ms = 20000) {
 async function withRetries(fn, tries) {
   for (let i = 0; ; i++) {
     try { return await fn(); }
-    catch (err) {
-      if (i >= tries) throw err;
-      await new Promise((r) => setTimeout(r, 800 * (i + 1)));
-    }
+    catch (err) { if (i >= tries) throw err; await new Promise((r) => setTimeout(r, 800 * (i + 1))); }
   }
 }
 
