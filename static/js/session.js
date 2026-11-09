@@ -209,6 +209,7 @@ let translateRetry = null;
 let translateSweepTimer = null;
 const SENTENCE_END = /[.?!\u3002\u2026\uFF01\uFF1F][)"'\u201d\u2019\]]?\s*$/;
 const UNITS_PER_REQUEST = 12;
+const MAX_UNIT_LINES = 3;   // close a unit after this many lines even without a sentence end
 const TRANSLATE_CONCURRENCY = 2;
 
 try { translateTarget = localStorage.getItem('translateTarget') || ''; } catch { /* private mode */ }
@@ -246,7 +247,9 @@ function buildUnits(lines, final) {
   for (const l of lines) {
     cur.push(l);
     const txt = (l.querySelector('.seg-text').textContent || '').trim();
-    if (SENTENCE_END.test(txt)) { units.push(cur); cur = []; }
+    // Close at a sentence end, or once the group is long enough that waiting
+    // for punctuation would stall translation (live clips often lack it).
+    if (SENTENCE_END.test(txt) || cur.length >= MAX_UNIT_LINES) { units.push(cur); cur = []; }
   }
   if (cur.length && final) units.push(cur);
   return units;
