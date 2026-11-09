@@ -262,10 +262,7 @@ async function drainTranslateQueue() {
         const ids = batch.map((l) => l.dataset.id).filter(Boolean);
         let data;
         try {
-          data = await withRetries(() => api(`/api/sessions/${sessionId}/translate`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids, target }),
-          }), 2);
+          data = await withRetries(() => translateFetch(ids, target), 2);
         } catch (err) {
           // Put this batch back and stop scheduling more; retry shortly.
           translateQueue.unshift(...batch);
@@ -285,6 +282,22 @@ async function drainTranslateQueue() {
     }
   } finally {
     translateBusy = false;
+  }
+}
+
+// A translate request with a hard time limit: a server that hangs (no reply,
+// no error) must not freeze the whole queue. On timeout it aborts and throws,
+// which the retry/requeue logic then handles.
+async function translateFetch(ids, target, ms = 20000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await api(`/api/sessions/${sessionId}/translate`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, target }), signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(timer);
   }
 }
 
