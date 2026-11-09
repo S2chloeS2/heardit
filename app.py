@@ -892,6 +892,26 @@ def api_keyword(session_id):
 
 # ---------------------------------------------------------------------- chat
 
+@app.route("/api/sessions/<int:session_id>/copilot", methods=["POST"])
+@auth.login_required
+def api_copilot(session_id):
+    """Live meeting copilot: a reply the user could say next, plus a gloss."""
+    if not owned(session_id):
+        return fail(i18n._("No such session."), 404)
+    if (denied := require("copilot")):
+        return denied
+    tail = db.get_transcript(session_id)[-4000:]
+    if len(tail.strip()) < 15:
+        return jsonify({"reply": "(listening)", "gloss": ""})
+    try:
+        out = ai.suggest_reply(tail, speak_lang=session_language(db.get_session(session_id)),
+                               gloss_lang=i18n.current_lang())
+    except Exception:
+        app.logger.error("copilot failed: %s", traceback.format_exc())
+        return fail(i18n._("답변 제안에 실패했습니다."), 502)
+    return jsonify(out)
+
+
 @app.route("/api/sessions/<int:session_id>/chat", methods=["POST"])
 @auth.login_required
 def api_chat(session_id):

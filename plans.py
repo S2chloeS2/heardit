@@ -51,7 +51,7 @@ PLANS = {
         "blurb": "매일 수업 듣는 학생",
         "features": ["프리미엄 노트 (빠짐없이) + 시험 요약", "노트 직접 수정",
                      "녹음 보관 · 문장 눌러 다시 듣기", "강의 자료 PDF 나란히 보기 · PDF 기반 챗",
-                     "실시간 번역 · 노트 언어 선택", "폴더로 묶어 한꺼번에 질문", "기록 무제한 보관"],
+                     "실시간 번역 · 노트 언어 선택", "미팅 실시간 답변 도우미", "폴더로 묶어 한꺼번에 질문", "기록 무제한 보관"],
     },
     "pro": {
         "name": "프로",
@@ -84,15 +84,15 @@ FEATURES = {
     "free":    {"premium_notes": False, "exam_sheet": False, "edit_notes": False,
                 "replay": False, "slides": False, "translation": False,
                 "folders": False, "notes_lang": False, "diarization": False,
-                "retention_days": 30},
+                "copilot": False, "retention_days": 30},
     "student": {"premium_notes": True, "exam_sheet": True, "edit_notes": True,
                 "replay": True, "slides": True, "translation": True,
                 "folders": True, "notes_lang": True, "diarization": False,
-                "retention_days": None},
+                "copilot": True, "retention_days": None},
     "pro":     {"premium_notes": True, "exam_sheet": True, "edit_notes": True,
                 "replay": True, "slides": True, "translation": True,
                 "folders": True, "notes_lang": True, "diarization": True,
-                "retention_days": None},
+                "copilot": True, "retention_days": None},
 }
 
 # Rows of the comparison table on /pricing: (label, feature key or text per plan)
@@ -106,6 +106,7 @@ COMPARISON = [
     ("녹음 보관 · 문장 눌러 다시 듣기", "replay"),
     ("강의 자료 PDF 나란히 보기 · PDF까지 읽는 챗", "slides"),
     ("실시간 번역 (16개 언어)", "translation"),
+    ("미팅 실시간 답변 도우미", "copilot"),
     ("노트 언어 선택", "notes_lang"),
     ("폴더 · 과목 단위 질문", "folders"),
     ("회의 화자 분리", "diarization"),

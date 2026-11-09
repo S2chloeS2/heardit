@@ -42,7 +42,7 @@ if (startBtn) {
           method: 'POST',
           body: form,
         });
-        if (data.text) appendSegment(data.text, data.id, data.audio);
+        if (data.text) { appendSegment(data.text, data.id, data.audio); copilotNudge(); }
       } catch (err) {
         toast(err.message, 'bad');
       } finally {
@@ -653,3 +653,67 @@ if (slidesBtn) document.getElementById('slides-remove').addEventListener('click'
     slidesFrame.src = 'about:blank';
   } catch (err) { toast(err.message, 'bad'); }
 });
+
+// ------------------------------------------------------- meeting copilot
+
+// In a live meeting, suggest what the user could say next. Runs only when the
+// toggle is on; debounced so a burst of clips makes one call, not many.
+const copilotToggle = document.getElementById('copilot-toggle');
+const copilotCard = document.getElementById('copilot-card');
+const copilotReply = document.getElementById('copilot-reply');
+const copilotGloss = document.getElementById('copilot-gloss');
+const copilotHint = document.getElementById('copilot-hint');
+let copilotOn = false;
+let copilotTimer = null;
+let copilotBusy = false;
+
+function copilotNudge() {
+  if (!copilotOn) return;
+  clearTimeout(copilotTimer);
+  // Wait for a short lull in speech before asking, so we answer a finished
+  // question rather than a half-sentence.
+  copilotTimer = setTimeout(runCopilot, 2500);
+}
+
+async function runCopilot() {
+  if (!copilotOn || copilotBusy) return;
+  copilotBusy = true;
+  try {
+    const data = await api(`/api/sessions/${sessionId}/copilot`, { method: 'POST' });
+    const reply = (data.reply || '').trim();
+    if (!reply || reply === '(listening)') {
+      copilotCard.hidden = true;
+      if (copilotHint) { copilotHint.hidden = false; copilotHint.textContent = T.copilotListening; }
+      return;
+    }
+    if (copilotHint) copilotHint.hidden = true;
+    copilotCard.hidden = false;
+    copilotReply.textContent = reply;
+    copilotReply.classList.remove('is-wait');
+    copilotGloss.textContent = data.gloss || '';
+  } catch (err) {
+    if (err.upgrade) { window.location.href = err.upgrade; return; }
+    toast(err.message, 'bad');
+  } finally {
+    copilotBusy = false;
+  }
+}
+
+if (copilotToggle) {
+  copilotToggle.addEventListener('change', () => {
+    copilotOn = copilotToggle.checked;
+    if (copilotOn) {
+      if (copilotHint) { copilotHint.hidden = false; copilotHint.textContent = T.copilotThinking; }
+      runCopilot();
+    } else {
+      clearTimeout(copilotTimer);
+      if (copilotHint) copilotHint.hidden = false;
+    }
+  });
+  const copyBtn = document.getElementById('copilot-copy');
+  const againBtn = document.getElementById('copilot-again');
+  if (copyBtn) copyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(copilotReply.textContent).then(() => toast(T.copilotCopied, 'ok')).catch(() => {});
+  });
+  if (againBtn) againBtn.addEventListener('click', runCopilot);
+}

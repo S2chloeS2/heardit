@@ -570,4 +570,18 @@ TRANSLATIONS = {
 
     '마지막 수정: 2026년 11월 9일': 'Last updated: 9 November 2026',
 
+    '실시간 답변 도우미': 'Live reply helper',
+    '누가 말을 걸면 할 말을 제안합니다': 'Suggests what to say when someone addresses you',
+    '켜기': 'On',
+    '켜면 미팅 중 누가 질문하거나 말을 걸 때 바로 할 말을 영어로 제안해줍니다. 아래에 뜻풀이도 함께 보여줍니다.': "When on, it suggests what to say — in the meeting's language — the moment someone asks you something, with a gloss of what was said.",
+    '복사': 'Copy',
+    '다시 제안': 'Suggest again',
+    '미팅 중 할 말을 실시간으로 제안받는 기능은 스튜던트 플랜부터입니다.': 'Live reply suggestions during a meeting start with the Student plan.',
+    '도우미 켜짐 · 듣는 중': 'Helper on · listening',
+    '듣는 중…': 'Listening…',
+    '답변 생각 중…': 'Thinking of a reply…',
+    '복사했습니다.': 'Copied.',
+    '미팅 실시간 답변 도우미': 'Live meeting reply helper',
+    '답변 제안에 실패했습니다.': 'Could not suggest a reply.',
+
 }

@@ -223,6 +223,32 @@
       </section>
     </div>
 
+    {% if session.kind == 'meeting' and session.source != 'link' %}
+    <aside class="card card-pad copilot-aside" id="copilot-aside" {% if not feat.copilot %}data-locked="1"{% endif %}>
+      <div class="chat-head" style="justify-content:space-between;">
+        <p class="section-label" style="margin:0;">{{ _('실시간 답변 도우미') }}</p>
+        {% if feat.copilot %}
+        <label class="switch" title="{{ _('누가 말을 걸면 할 말을 제안합니다') }}">
+          <input type="checkbox" id="copilot-toggle"><span>{{ _('켜기') }}</span>
+        </label>
+        {% endif %}
+      </div>
+      {% if feat.copilot %}
+      <div class="copilot-body" id="copilot-body">
+        <p class="hint" id="copilot-hint">{{ _('켜면 미팅 중 누가 질문하거나 말을 걸 때 바로 할 말을 영어로 제안해줍니다. 아래에 뜻풀이도 함께 보여줍니다.') }}</p>
+        <div id="copilot-card" hidden>
+          <p class="copilot-gloss" id="copilot-gloss"></p>
+          <div class="copilot-reply" id="copilot-reply"></div>
+          <button type="button" class="btn btn-ghost btn-sm" id="copilot-copy">{{ _('복사') }}</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="copilot-again">{{ _('다시 제안') }}</button>
+        </div>
+      </div>
+      {% else %}
+      <p class="hint" style="margin-top:8px;">🔒 {{ _('미팅 중 할 말을 실시간으로 제안받는 기능은 스튜던트 플랜부터입니다.') }} <a href="{{ url_for('pricing') }}">{{ _('플랜 보기') }}</a></p>
+      {% endif %}
+    </aside>
+    {% endif %}
+
     <aside class="card card-pad chat-aside">
       <div class="chat-head">
         <img class="spot-sm" src="{{ url_for('static', filename=art ~ 'owl-bubble.png') }}" alt="" width="480" height="480">

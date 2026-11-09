@@ -593,6 +593,59 @@ def answer(question, transcript, history=None, lang=None, slides=None):
     return _chat(messages, max_tokens=700)
 
 
+# --------------------------------------------------------- meeting copilot
+
+COPILOT_SYSTEM = (
+    "You are a live meeting copilot for someone speaking a language that is not "
+    "their first. You see a running transcript of a meeting or call they are in. "
+    "Your job: when it is their turn or someone has just asked them something, "
+    "give them a short, natural reply they can say out loud right now.\n\n"
+    "Rules:\n"
+    "1. Write the reply in {language} — the language the meeting is being held "
+    "in — because that is what they need to speak.\n"
+    "2. Keep it short and natural: one to three sentences, the way a fluent "
+    "speaker would actually say it. No preamble, no 'you could say'.\n"
+    "3. Base it on the conversation. If a question was asked, answer it. If they "
+    "are expected to give an update or opinion, offer a sensible one they can "
+    "adjust.\n"
+    "4. If nothing has been directed at them and no reply is needed yet, output "
+    "exactly: (listening)\n"
+    "5. Never invent specific facts, numbers, names or commitments you cannot "
+    "see in the transcript; keep the reply general enough to be safe, or leave a "
+    "natural placeholder in [brackets] for them to fill.\n\n"
+    "Also give a one-line gloss, in {gloss_lang}, of what was just asked or said "
+    "to them, so they understand the moment.\n\n"
+    "Return JSON: {{\"reply\": \"...\", \"gloss\": \"...\"}}"
+)
+
+
+def suggest_reply(transcript_tail, speak_lang=None, gloss_lang="ko"):
+    """A short reply the user can say next, plus a gloss of what was asked.
+
+    `transcript_tail` is the recent transcript (the last minute or two is
+    enough). `speak_lang` is the meeting's language; `gloss_lang` is the
+    user's own language for the one-line explanation."""
+    if not (transcript_tail or "").strip():
+        return {"reply": "(listening)", "gloss": ""}
+    speak = speak_lang or detect_language(transcript_tail) or "en"
+    system = COPILOT_SYSTEM.format(language=language_name(speak), gloss_lang=language_name(gloss_lang))
+    raw = _chat(
+        [
+            {"role": "system", "content": system},
+            {"role": "user", "content": f"Transcript so far (most recent last):\n{transcript_tail[-4000:]}"},
+        ],
+        response_format={"type": "json_object"},
+        max_tokens=320,
+        temperature=0.4,
+    )
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return {"reply": "(listening)", "gloss": ""}
+    reply = (data.get("reply") or "").strip()
+    return {"reply": reply, "gloss": (data.get("gloss") or "").strip()}
+
+
 # --------------------------------------------------------------- folder chat
 
 FOLDER_SYSTEM = (
