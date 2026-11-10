@@ -106,7 +106,7 @@ function appendSegment(text, id, audio) {
   line.innerHTML = `<span class="seg-time">${timeNow()}</span><span class="seg-body"><span class="seg-text"></span><span class="seg-trans" hidden></span></span>`;
   line.querySelector('.seg-text').textContent = text;
   transcriptEl.appendChild(line);
-  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+  stickBottom();
   if (translateTarget && id) ensureTranslated();
 }
 
@@ -191,25 +191,36 @@ if (audioEl) {
 }
 
 // ------------------------------------------------------------- translation
-
-// ------------------------------------------------------------- translation
 //
-// A second line under each sentence, in the chosen language. Consecutive lines
-// are grouped into complete sentences (a group ends at sentence punctuation),
-// each group is translated as a whole, and the translation is shown under the
-// group's LAST line — so a 6-second clip that cuts a sentence in half is joined
-// with the next lines before translating. Cached on the server, so reopening is
-// instant, and changing language re-translates the whole transcript.
+// Two passes, so the translation is both instant and clean:
+//
+//   Pass 1 (live, per line): the moment a line arrives it is translated on its
+//   own and shown under it, with no waiting for the sentence to finish, so the
+//   translation never lags behind the lecture. Not saved on the server.
+//
+//   Pass 2 (sentence): once consecutive lines make a complete sentence (they end
+//   in sentence punctuation, or enough lines have piled up) the whole sentence is
+//   translated together and REPLACES the rough per-line pieces with one clean
+//   line. For a sentence recorded live across several 6-second clips, the English
+//   fragments are joined back into the one sentence that was spoken. This pass is
+//   cached, so reopening the note is instant.
+//
+// Changing the language re-runs both passes for the whole transcript.
 
 const translateSelect = document.getElementById('translate-select');
 let translateTarget = '';
-let translateQueue = [];        // array of units (each unit = array of line els)
+let lineQueue = [];             // single line els awaiting the instant pass
+let unitQueue = [];             // arrays of line els that form a complete sentence
 let translateBusy = false;
 let translateRetry = null;
 let translateSweepTimer = null;
 const SENTENCE_END = /[.?!\u3002\u2026\uFF01\uFF1F][)"'\u201d\u2019\]]?\s*$/;
-const UNITS_PER_REQUEST = 12;
-const MAX_UNIT_LINES = 3;   // close a unit after this many lines even without a sentence end
+const UNITS_PER_REQUEST = 10;
+const LINES_PER_REQUEST = 10;
+// Merge/translate a run as one sentence after this many lines even without
+// punctuation. The instant per-line pass already covers latency, so this can
+// wait a little for real sentence ends instead of chopping every few lines.
+const MAX_UNIT_LINES = 6;
 const TRANSLATE_CONCURRENCY = 2;
 
 try { translateTarget = localStorage.getItem('translateTarget') || ''; } catch { /* private mode */ }
@@ -222,7 +233,7 @@ if (translateSelect) {
   translateSelect.addEventListener('change', () => {
     translateTarget = translateSelect.value;
     try { localStorage.setItem('translateTarget', translateTarget); } catch { /* ignore */ }
-    translateQueue = [];
+    lineQueue = []; unitQueue = [];
     applyTranslationMode();
     if (translateTarget) startTranslateSweep(); else stopTranslateSweep();
   });
@@ -230,67 +241,84 @@ if (translateSelect) {
   if (translateTarget) startTranslateSweep();
 }
 
+// Keep the newest line pinned to the bottom while recording, but only when the
+// reader is already at the bottom. If they scrolled up to re-read, leave them
+// there instead of yanking the page down on every new line.
+let autoFollow = true;
+function pageScroller() { return document.scrollingElement || document.documentElement; }
+function nearPageBottom() { const el = pageScroller(); return el.scrollHeight - (el.scrollTop + el.clientHeight) < 200; }
+window.addEventListener('scroll', () => { autoFollow = nearPageBottom(); }, { passive: true });
+function stickBottom() { if (autoFollow) window.scrollTo({ top: pageScroller().scrollHeight }); }
+
+// Lines merged into a sentence are dropped from view (class u-gone) but kept in
+// the DOM, so they never re-enter the passes below.
 function transcriptLines() {
-  return [...transcriptEl.querySelectorAll('.seg-line[data-id]')];
+  return [...transcriptEl.querySelectorAll('.seg-line[data-id]:not(.u-gone)')];
 }
 function isRecording() {
   try { return !!(capture && capture.isRecording); } catch { return false; }
 }
+function segText(l) { return (l.querySelector('.seg-text').textContent || '').trim(); }
 
-// Group consecutive lines into sentence units. A unit closes at a line ending
-// in sentence punctuation; a trailing open unit is included only when `final`
-// (recording stopped or a static transcript), so a half-spoken live sentence
-// waits for the rest before being translated.
-function buildUnits(lines, final) {
+// Split the visible lines into complete sentence units and a trailing tail. A
+// unit closes at sentence punctuation or at MAX_UNIT_LINES. The still-open tail
+// is kept separate while recording (its lines get the instant pass); once
+// recording stops, or for a static transcript, the tail is closed as a unit too.
+function closedUnitsAndTail(lines, final) {
   const units = [];
   let cur = [];
   for (const l of lines) {
     cur.push(l);
-    const txt = (l.querySelector('.seg-text').textContent || '').trim();
-    // Close at a sentence end, or once the group is long enough that waiting
-    // for punctuation would stall translation (live clips often lack it).
-    if (SENTENCE_END.test(txt) || cur.length >= MAX_UNIT_LINES) { units.push(cur); cur = []; }
+    if (SENTENCE_END.test(segText(l)) || cur.length >= MAX_UNIT_LINES) { units.push(cur); cur = []; }
   }
-  if (cur.length && final) units.push(cur);
-  return units;
+  if (cur.length && final) { units.push(cur); cur = []; }
+  return { units, tail: cur };
 }
 
 function applyTranslationMode() {
   if (!translateTarget) {
-    translateQueue = [];
+    lineQueue = []; unitQueue = [];
     transcriptLines().forEach((l) => { const t = l.querySelector('.seg-trans'); t.hidden = true; t.classList.remove('is-loading'); });
     return;
   }
-  // Show any cached translations for this language right away; queue the rest.
+  // A line already carrying a translation for this language (cached, or rendered
+  // by the server) counts as done, so it is not queued again.
   transcriptLines().forEach((l) => {
     const t = l.querySelector('.seg-trans');
-    if (t.dataset.lang === translateTarget) { t.hidden = !t.textContent; t.classList.remove('is-loading'); }
+    if (t.dataset.lang === translateTarget) {
+      t.hidden = !t.textContent;
+      t.classList.remove('is-loading');
+      if (!t.dataset.stage) t.dataset.stage = 'unit';
+    }
   });
   ensureTranslated();
 }
 
-// Queue every sentence unit whose translation into the current language is not
-// yet shown. Idempotent: safe to call on each new clip and from the sweep.
+// Queue whatever is not yet translated into the current language. Idempotent:
+// safe to call on each new clip and from the periodic sweep.
 function ensureTranslated() {
   if (!translateTarget) return;
-  const units = buildUnits(transcriptLines(), !isRecording());
+  const { units, tail } = closedUnitsAndTail(transcriptLines(), !isRecording());
+
+  // Pass 2 - complete sentences.
   for (const unit of units) {
     const last = unit[unit.length - 1];
     const lt = last.querySelector('.seg-trans');
-    const done = lt.dataset.lang === translateTarget && lt.textContent;
-    if (done) continue;
-    // Mark the unit: the last line shows a loading placeholder, the rest hide.
-    unit.forEach((l, i) => {
-      const t = l.querySelector('.seg-trans');
-      if (i === unit.length - 1) {
-        t.hidden = false; t.classList.add('is-loading');
-        if (t.dataset.lang !== translateTarget) t.textContent = '\u2026';
-      } else {
-        t.hidden = true;
-      }
-    });
-    if (!translateQueue.some((u) => u[u.length - 1] === last)) translateQueue.push(unit);
+    if (lt.dataset.stage === 'unit' && lt.dataset.lang === translateTarget) continue;
+    lt.hidden = false; lt.classList.add('is-loading');
+    if (lt.dataset.lang !== translateTarget) lt.textContent = '\u2026';
+    if (!unitQueue.some((u) => u[u.length - 1] === last)) unitQueue.push(unit);
   }
+
+  // Pass 1 - the live tail, still forming a sentence: translate each line now.
+  for (const l of tail) {
+    const t = l.querySelector('.seg-trans');
+    if (t.dataset.lang === translateTarget) continue; // already shown (line or sentence)
+    t.hidden = false; t.classList.add('is-loading');
+    if (t.dataset.lang !== translateTarget) t.textContent = '\u2026';
+    if (!lineQueue.includes(l)) lineQueue.push(l);
+  }
+
   drainTranslateQueue();
 }
 
@@ -299,25 +327,29 @@ async function drainTranslateQueue() {
   translateBusy = true;
   let hadError = false;
   try {
-    while (translateQueue.length && translateTarget && !hadError) {
+    while ((unitQueue.length || lineQueue.length) && translateTarget && !hadError) {
       const target = translateTarget;
       const reqs = [];
-      for (let c = 0; c < TRANSLATE_CONCURRENCY && translateQueue.length; c++) {
-        reqs.push(translateQueue.splice(0, UNITS_PER_REQUEST));
+      for (let c = 0; c < TRANSLATE_CONCURRENCY && (unitQueue.length || lineQueue.length); c++) {
+        if (unitQueue.length) reqs.push({ type: 'unit', batch: unitQueue.splice(0, UNITS_PER_REQUEST) });
+        else reqs.push({ type: 'line', batch: lineQueue.splice(0, LINES_PER_REQUEST) });
       }
-      await Promise.all(reqs.map(async (units) => {
-        const groups = units.map((u) => u.map((l) => l.dataset.id).filter(Boolean));
+      await Promise.all(reqs.map(async (req) => {
+        const groups = req.type === 'unit'
+          ? req.batch.map((u) => u.map((l) => l.dataset.id).filter(Boolean))
+          : req.batch.map((l) => [l.dataset.id]);
         let data;
         try {
-          data = await withRetries(() => translateFetch(groups, target), 2);
+          data = await withRetries(() => translateFetch(groups, target, req.type === 'line'), 2);
         } catch (err) {
-          translateQueue.unshift(...units); // never drop a unit
-          hadError = true;
+          if (req.type === 'unit') unitQueue.unshift(...req.batch); else lineQueue.unshift(...req.batch);
+          hadError = true;                 // never drop work
           if (!translateRetry) translateRetry = setTimeout(() => { translateRetry = null; drainTranslateQueue(); }, 4000);
           return;
         }
         if (target !== translateTarget) return;
-        units.forEach((unit) => applyUnit(unit, data.translations, target));
+        if (req.type === 'unit') req.batch.forEach((u) => applyUnit(u, data.translations, target));
+        else req.batch.forEach((l) => applyLine(l, data.translations, target));
       }));
     }
   } finally {
@@ -325,19 +357,53 @@ async function drainTranslateQueue() {
   }
 }
 
+// Instant pass: show the rough translation under one line, unless the clean
+// sentence translation has already landed there (never downgrade it).
+function applyLine(line, translations, target) {
+  const t = line.querySelector('.seg-trans');
+  t.classList.remove('is-loading');
+  if (t.dataset.stage === 'unit' && t.dataset.lang === target) return;
+  const tr = translations[line.dataset.id];
+  if (tr) { t.textContent = tr; t.dataset.lang = target; t.dataset.stage = 'line'; t.hidden = false; }
+  else { t.hidden = true; }
+  stickBottom();
+}
+
+// Sentence pass: show one clean translation. For a live sentence spoken across
+// several lines, also join the English fragments back into the single sentence
+// and fold the earlier lines away, keeping the first line's time and audio on the
+// surviving line so click-to-replay still starts at the sentence.
 function applyUnit(unit, translations, target) {
   const last = unit[unit.length - 1];
-  unit.forEach((l) => {
-    const t = l.querySelector('.seg-trans');
-    t.classList.remove('is-loading');
-    if (l === last) {
-      const tr = translations[l.dataset.id];
-      if (tr) { t.textContent = tr; t.dataset.lang = target; t.hidden = false; }
-      else { t.textContent = ''; t.dataset.lang = target; t.hidden = true; }
-    } else {
-      t.textContent = ''; t.dataset.lang = target; t.hidden = true; // part of the sentence shown below
+  const full = translations[last.dataset.id] || '';
+  const mergeable = unit.length > 1 && unit.every((l) => l.classList.contains('is-new'));
+
+  if (mergeable) {
+    const first = unit[0];
+    last.querySelector('.seg-text').textContent = unit.map(segText).join(' ').replace(/\s+/g, ' ').trim();
+    last.querySelector('.seg-time').textContent = first.querySelector('.seg-time').textContent;
+    if (first.dataset.audio) {
+      last.dataset.audio = first.dataset.audio;
+      last.dataset.offset = first.dataset.offset || '0';
+      last.classList.add('has-audio');
     }
-  });
+    for (let i = 0; i < unit.length - 1; i++) {
+      unit[i].classList.add('u-gone');
+      unit[i].classList.remove('has-audio');
+    }
+  } else {
+    for (let i = 0; i < unit.length - 1; i++) {
+      const t = unit[i].querySelector('.seg-trans');
+      t.textContent = ''; t.dataset.lang = target; t.dataset.stage = 'unit'; t.hidden = true;
+    }
+  }
+
+  const t = last.querySelector('.seg-trans');
+  t.classList.remove('is-loading');
+  t.dataset.lang = target; t.dataset.stage = 'unit';
+  if (full) { t.textContent = full; t.hidden = false; }
+  else { t.textContent = ''; t.hidden = true; }
+  stickBottom();
 }
 
 function startTranslateSweep() {
@@ -350,13 +416,14 @@ function stopTranslateSweep() {
 
 // Hard time limit: a server that hangs (no reply, no error) must not freeze the
 // queue. On timeout it aborts and throws, which the retry/requeue path handles.
-async function translateFetch(groups, target, ms = 20000) {
+// `ephemeral` marks the instant per-line pass, which the server does not save.
+async function translateFetch(groups, target, ephemeral = false, ms = 20000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ms);
   try {
     return await api(`/api/sessions/${sessionId}/translate`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ groups, target }), signal: ctrl.signal,
+      body: JSON.stringify({ groups, target, persist: !ephemeral }), signal: ctrl.signal,
     });
   } finally {
     clearTimeout(timer);
@@ -625,7 +692,7 @@ function exportMarkdown() {
   if (keywords.length) lines.push(`## ${T.exportKeywords}`, '', keywords.join(', '), '');
 
   lines.push(`## ${T.exportTranscript}`, '');
-  transcriptEl.querySelectorAll('.seg-line').forEach((line) => {
+  transcriptEl.querySelectorAll('.seg-line:not(.u-gone)').forEach((line) => {
     lines.push(`[${line.querySelector('.seg-time').textContent}] ${line.querySelector('.seg-text').textContent}`);
     const trans = line.querySelector('.seg-trans');
     if (trans && !trans.hidden && trans.textContent.trim() && trans.textContent !== '…') {

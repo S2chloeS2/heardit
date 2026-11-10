@@ -1190,6 +1190,13 @@ def api_translate(session_id):
     # each group is joined and translated as a whole, the translation stored on
     # the group's LAST id and the earlier ids stored empty (they are shown as
     # part of the sentence below). `ids`: the old per-line shape, still accepted.
+    #
+    # `persist` (default true) is the final, sentence-level pass: it is cached so
+    # reopening is instant. The client also sends a quick per-line pass with
+    # persist=false while recording, to show a rough translation under each line
+    # the moment it arrives; those are ephemeral (never saved, never consulted as
+    # cache) so they can never shadow the clean sentence translation that follows.
+    persist = body.get("persist", True)
     groups = body.get("groups")
     if groups is None and body.get("ids") is not None:
         groups = [[i] for i in body["ids"]]
@@ -1202,7 +1209,7 @@ def api_translate(session_id):
         return jsonify({"translations": {}})
 
     all_ids = [i for g in groups for i in g]
-    cached = db.cached_translations(session_id, all_ids, target)
+    cached = db.cached_translations(session_id, all_ids, target) if persist else {}
     texts = db.segment_texts(session_id, all_ids)
 
     result = dict(cached)
@@ -1227,7 +1234,8 @@ def api_translate(session_id):
             for i in g[:-1]:
                 to_save[i] = ""       # mid-sentence lines: shown under the last
             to_save[g[-1]] = tr
-        db.save_translations(session_id, target, to_save)
+        if persist:
+            db.save_translations(session_id, target, to_save)
         result.update(to_save)
     return jsonify({"translations": {str(k): v for k, v in result.items()}})
 

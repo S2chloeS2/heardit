@@ -287,10 +287,13 @@ a:hover { text-decoration: underline; }
 
 /* ------------------------------------------------------------- transcript */
 
+/* No inner scrollbar: the transcript flows in the page so reading uses the one
+   page scroll (no nested down-arrow / drag handle), and a new line never hides
+   its translation at the edge of a short box. */
 .transcript {
-  max-height: 380px; overflow-y: auto; padding: 4px 2px;
-  display: grid; gap: 11px; scroll-behavior: smooth;
+  padding: 4px 2px; display: grid; gap: 11px;
 }
+.seg-line.u-gone { display: none; }
 .seg-line { display: grid; grid-template-columns: 52px 1fr; gap: 13px; align-items: baseline; }
 .seg-time {
   font-size: 11.5px; color: var(--ink-mute); font-variant-numeric: tabular-nums;
